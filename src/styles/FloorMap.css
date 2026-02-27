@@ -1,11 +1,12 @@
-/* FloorMap */
+/* FloorMap — mobile-first */
 .fm-root {
     display: flex;
     flex-direction: column;
-    height: 100vh;
-    width: 100vw;
+    height: 100dvh;
+    width: 100%;
     background: var(--bg);
     overflow: hidden;
+    padding-bottom: var(--sab);
     animation: fmIn .3s ease;
 }
 
@@ -22,30 +23,44 @@
 }
 
 .fm-header {
-    padding: 16px 20px 10px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    padding: calc(var(--sat) + 12px) 14px 8px;
+    gap: 8px;
+    flex-shrink: 0;
     background: linear-gradient(180deg, #0d1120 0%, transparent 100%);
 }
 
+.fm-back-btn {
+    color: var(--accent2);
+    font-size: 15px;
+    padding: 7px 12px;
+    min-height: 38px;
+    background: rgba(99, 102, 241, .1);
+    border-radius: 8px;
+    border: 1px solid rgba(99, 102, 241, .2);
+    white-space: nowrap;
+}
+
 .fm-title {
+    flex: 1;
     font-family: 'Outfit', sans-serif;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 700;
     color: var(--text);
 }
 
 .fm-floor-tabs {
     display: flex;
-    gap: 6px;
+    gap: 5px;
 }
 
 .fm-tab {
-    padding: 6px 14px;
+    padding: 6px 12px;
     border-radius: 20px;
     font-size: 12px;
     font-weight: 500;
+    min-height: 36px;
     border: 1.5px solid var(--border);
     background: var(--surface);
     color: var(--text-muted);
@@ -61,17 +76,19 @@
 .fm-map-wrap {
     flex: 1;
     overflow: hidden;
-    padding: 0 12px;
+    padding: 4px 10px;
     display: flex;
     align-items: center;
     justify-content: center;
+    min-height: 0;
 }
 
 .fm-svg {
     width: 100%;
     height: 100%;
-    max-height: calc(100vh - 160px);
-    border-radius: 12px;
+    max-height: 100%;
+    border-radius: 10px;
+    display: block;
 }
 
 /* Route animation */
@@ -85,7 +102,6 @@
     animation: dashMove 1.2s linear infinite;
 }
 
-/* Pulse rings */
 @keyframes wpPulse {
 
     0%,
@@ -122,7 +138,6 @@
     animation: ripple 1.8s ease-in-out infinite;
 }
 
-/* Destination rect glow */
 @keyframes destGlow {
 
     0%,
@@ -139,13 +154,14 @@
     animation: destGlow 1.5s ease-in-out infinite;
 }
 
-/* CTA bottom bar */
+/* CTA bar */
 .fm-cta-row {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 16px 20px;
+    padding: 10px 14px calc(var(--sab) + 10px);
     background: linear-gradient(0deg, #0d1120 0%, transparent 100%);
+    flex-shrink: 0;
 }
 
 .fm-dest-info {
@@ -172,23 +188,23 @@
 }
 
 .fm-ar-btn {
-    padding: 10px 18px;
+    padding: 11px 18px;
     border-radius: 12px;
+    min-height: 44px;
     background: var(--accent);
     color: white;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
-    transition: transform .15s;
     white-space: nowrap;
 }
 
-.fm-ar-btn:hover {
-    transform: translateY(-2px);
+.fm-ar-btn:active {
+    background: #4f46e5;
 }
 
 .fm-cancel-btn {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     background: rgba(255, 255, 255, .08);
     color: var(--text-muted);
@@ -196,9 +212,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background .2s;
 }
 
-.fm-cancel-btn:hover {
-    background: rgba(255, 255, 255, .15);
+.fm-cancel-btn:active {
+    background: rgba(255, 255, 255, .18);
 }

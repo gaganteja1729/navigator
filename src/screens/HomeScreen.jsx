@@ -4,11 +4,13 @@ import '../styles/HomeScreen.css';
 
 export default function HomeScreen() {
     const {
-        currentFloor, setCurrentFloor,
-        setDestNodeId,
+        currentFloor, changeFloor,
+        selectDestination,
         gpsPos, gpsError,
-        setViewMode,
+        navigate,
         selectableNodes,
+        setCurrentFloor,   // for "Change floor" → back to floor-select
+        screenStack,
     } = useNav();
 
     const [query, setQuery] = useState('');
@@ -18,11 +20,6 @@ export default function HomeScreen() {
         .filter(n => n.floor === showFloorRooms && n.type !== 'corridor')
         .filter(n => n.name.toLowerCase().includes(query.toLowerCase()));
 
-    const handleSelect = (node) => {
-        setDestNodeId(node.id);
-        setViewMode('map');
-    };
-
     return (
         <div className="hs-root">
             {/* Header */}
@@ -30,20 +27,21 @@ export default function HomeScreen() {
                 <div className="hs-header-top">
                     <h1 className="hs-title">🏫 Campus Nav</h1>
                     <span className={`hs-gps-badge ${gpsPos ? 'active' : 'inactive'}`}>
-                        {gpsPos ? '📍 GPS Active' : gpsError ? '⚠️ No GPS' : '⏳ Getting GPS…'}
+                        {gpsPos ? '📍 GPS' : gpsError ? '⚠️ No GPS' : '⏳ GPS…'}
                     </span>
                 </div>
                 <div className="hs-header-bottom-row">
                     <p className="hs-floor-label">
                         On: <strong>{currentFloor === 'ground' ? 'Ground Floor' : '1st Floor'}</strong>
-                        <button className="hs-switch-link" onClick={() => setCurrentFloor(null)}>Change</button>
+                        <button
+                            className="hs-switch-link"
+                            onClick={() => {
+                                // Push floor-select back onto stack so goBack works naturally
+                                navigate('floor-select');
+                            }}
+                        >Change</button>
                     </p>
-                    {/* ── Admin Button ── */}
-                    <button
-                        className="hs-admin-btn"
-                        onClick={() => setViewMode('admin')}
-                        title="Admin: Record walkable paths"
-                    >
+                    <button className="hs-admin-btn" onClick={() => navigate('admin')}>
                         🛠️ Admin
                     </button>
                 </div>
@@ -54,7 +52,7 @@ export default function HomeScreen() {
                 <button
                     className={`hs-tab ${showFloorRooms === 'ground' ? 'active' : ''}`}
                     onClick={() => setShowFloorRooms('ground')}
-                >🏠 Ground Floor</button>
+                >🏠 Ground</button>
                 <button
                     className={`hs-tab ${showFloorRooms === 'first' ? 'active' : ''}`}
                     onClick={() => setShowFloorRooms('first')}
@@ -78,8 +76,8 @@ export default function HomeScreen() {
             {/* GPS accuracy banner */}
             {gpsPos && (
                 <div className="hs-acc-banner">
-                    GPS accuracy: ±{Math.round(gpsPos.accuracy)}m
-                    {gpsPos.accuracy > 20 && <span className="hs-acc-warn"> (Try moving outdoors)</span>}
+                    GPS ±{Math.round(gpsPos.accuracy)}m
+                    {gpsPos.accuracy > 20 && <span className="hs-acc-warn"> — try outdoors</span>}
                 </div>
             )}
 
@@ -89,14 +87,14 @@ export default function HomeScreen() {
                     <p className="hs-empty">No results for &ldquo;{query}&rdquo;</p>
                 )}
                 {filtered.map(node => (
-                    <button key={node.id} className="hs-dest-card" onClick={() => handleSelect(node)}>
+                    <button key={node.id} className="hs-dest-card" onClick={() => selectDestination(node.id)}>
                         <span className="hs-dest-icon">{node.icon}</span>
                         <div className="hs-dest-info">
                             <span className="hs-dest-name">{node.name}</span>
                             <span className="hs-dest-type">
                                 {showFloorRooms === 'ground' ? 'Ground Floor' : '1st Floor'}
                                 {node.type === 'staircase' && ' · Staircase'}
-                                {node.type === 'lab' && ' · Laboratory'}
+                                {node.type === 'lab' && ' · Lab'}
                                 {node.type === 'office' && ' · Office'}
                             </span>
                         </div>

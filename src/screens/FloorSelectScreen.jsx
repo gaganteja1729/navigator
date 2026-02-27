@@ -3,7 +3,7 @@ import { useNav } from '../context/NavigationContext.jsx';
 import '../styles/FloorSelect.css';
 
 export default function FloorSelectScreen() {
-    const { setCurrentFloor } = useNav();
+    const { selectFloor } = useNav();
     const [selected, setSelected] = useState(null);
 
     return (
@@ -36,7 +36,7 @@ export default function FloorSelectScreen() {
                 <button
                     className="fs-confirm"
                     disabled={!selected}
-                    onClick={() => setCurrentFloor(selected)}
+                    onClick={() => selectFloor(selected)}
                 >
                     Start Navigating →
                 </button>

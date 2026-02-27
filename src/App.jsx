@@ -7,22 +7,16 @@ import AdminPathScreen from './screens/AdminPathScreen.jsx';
 import './App.css';
 
 function AppRouter() {
-  const { currentFloor, viewMode, destNodeId } = useNav();
+  const { currentScreen } = useNav();
 
-  // 1. No floor chosen → show floor selector
-  if (!currentFloor) return <FloorSelectScreen />;
-
-  // 2. Admin path recorder
-  if (viewMode === 'admin') return <AdminPathScreen />;
-
-  // 3. AR mode
-  if (viewMode === 'ar' && destNodeId) return <ARView />;
-
-  // 4. Map view with route
-  if (destNodeId) return <FloorMapView />;
-
-  // 5. Default: Home (search)
-  return <HomeScreen />;
+  switch (currentScreen) {
+    case 'floor-select': return <FloorSelectScreen />;
+    case 'home': return <HomeScreen />;
+    case 'map': return <FloorMapView />;
+    case 'ar': return <ARView />;
+    case 'admin': return <AdminPathScreen />;
+    default: return <FloorSelectScreen />;
+  }
 }
 
 export default function App() {

@@ -1,39 +1,71 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap');
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg:         #080b14;
-  --surface:    #0f1219;
-  --surface2:   #151929;
-  --border:     #1e2540;
-  --accent:     #6366f1;
-  --accent2:    #818cf8;
-  --gold:       #f59e0b;
-  --green:      #10b981;
-  --text:       #e2e8f0;
-  --text-muted: #64748b;
-  --glass:      rgba(255,255,255,.04);
-  --radius:     14px;
-  --shadow:     0 8px 32px rgba(0,0,0,.5);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-html, body, #root {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
+:root {
+  --bg: #080b14;
+  --surface: #0f1219;
+  --surface2: #151929;
+  --border: #1e2540;
+  --accent: #6366f1;
+  --accent2: #818cf8;
+  --gold: #f59e0b;
+  --green: #10b981;
+  --text: #e2e8f0;
+  --text-muted: #64748b;
+  --radius: 14px;
+  --shadow: 0 8px 32px rgba(0, 0, 0, .5);
+  /* Safe-area insets for iPhone notch / home bar */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+html {
+  height: -webkit-fill-available;
+}
+
+body {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  min-height: 100dvh;
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--text);
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  /* kill blue flash on mobile tap */
 }
 
-.nav-split {
+#root {
   width: 100%;
-  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
-button { cursor: pointer; border: none; background: none; font-family: inherit; }
-input  { font-family: inherit; }
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+input {
+  font-family: inherit;
+}
+
+/* Minimum 44px tap targets on mobile */
+button {
+  min-height: 36px;
+}

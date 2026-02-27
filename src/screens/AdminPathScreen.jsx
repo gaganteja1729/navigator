@@ -69,7 +69,7 @@ function LabelModal({ pointType, defaultVal, onConfirm, onSkip }) {
 }
 
 export default function AdminPathScreen() {
-    const { gpsPos, gpsError, setViewMode, refreshGraph } = useNav();
+    const { gpsPos, gpsError, goBack, refreshGraph } = useNav();
 
     const [floor, setFloor] = useState('ground');
     const [segments, setSegments] = useState([]);
@@ -261,7 +261,7 @@ export default function AdminPathScreen() {
 
             {/* ── Header ── */}
             <div className="ap-header">
-                <button className="ap-back" onClick={() => setViewMode('map')}>‹ Back</button>
+                <button className="ap-back" onClick={goBack}>‹ Back</button>
                 <h1 className="ap-title">🛠️ Path Recorder</h1>
                 <div className="ap-tools">
                     <button className="ap-tool-btn" onClick={() => exportToJson(segments)} title="Export">⬇</button>
