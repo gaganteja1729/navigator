@@ -15,131 +15,6 @@
 
 const LS_KEY = 'campusWalkablePaths';
 
-// ── Seed with some demo segments so the app is usable before admin records ──
-const DEMO_SEGMENTS = [
-    // Ground floor: entrance → room-101 area
-    {
-        id: 'd1', floor: 'ground',
-        start: { lat: 17.38500, lng: 78.48670, label: 'Main Entrance' },
-        end: { lat: 17.38510, lng: 78.48670, label: 'Corridor A' }
-    },
-    // Ground: corridor A → room 101
-    {
-        id: 'd2', floor: 'ground',
-        start: { lat: 17.38510, lng: 78.48670, label: 'Corridor A' },
-        end: { lat: 17.38510, lng: 78.48660, label: 'Room 101 – Mathematics' }
-    },
-    // Ground: corridor A → corridor B
-    {
-        id: 'd3', floor: 'ground',
-        start: { lat: 17.38510, lng: 78.48670, label: 'Corridor A' },
-        end: { lat: 17.38520, lng: 78.48670, label: 'Corridor B' }
-    },
-    // Ground: corridor B → room 102
-    {
-        id: 'd4', floor: 'ground',
-        start: { lat: 17.38520, lng: 78.48670, label: 'Corridor B' },
-        end: { lat: 17.38520, lng: 78.48660, label: 'Room 102 – Physics' }
-    },
-    // Ground: corridor B → room 103
-    {
-        id: 'd5', floor: 'ground',
-        start: { lat: 17.38520, lng: 78.48670, label: 'Corridor B' },
-        end: { lat: 17.38520, lng: 78.48655, label: 'Room 103 – Chemistry' }
-    },
-    // Ground: corridor A → computer lab
-    {
-        id: 'd6', floor: 'ground',
-        start: { lat: 17.38510, lng: 78.48670, label: 'Corridor A' },
-        end: { lat: 17.38510, lng: 78.48655, label: 'Computer Lab' }
-    },
-    // Ground: entrance → admin office
-    {
-        id: 'd7', floor: 'ground',
-        start: { lat: 17.38500, lng: 78.48670, label: 'Main Entrance' },
-        end: { lat: 17.38500, lng: 78.48660, label: 'Admin Office' }
-    },
-    // Ground: entrance → cafeteria
-    {
-        id: 'd8', floor: 'ground',
-        start: { lat: 17.38500, lng: 78.48670, label: 'Main Entrance' },
-        end: { lat: 17.38500, lng: 78.48650, label: 'Cafeteria' }
-    },
-    // Ground: corridor B → library
-    {
-        id: 'd9', floor: 'ground',
-        start: { lat: 17.38520, lng: 78.48670, label: 'Corridor B' },
-        end: { lat: 17.38530, lng: 78.48670, label: 'Library' }
-    },
-    // Ground: library → WC
-    {
-        id: 'd10', floor: 'ground',
-        start: { lat: 17.38530, lng: 78.48670, label: 'Library' },
-        end: { lat: 17.38530, lng: 78.48660, label: 'Washroom (Ground)' }
-    },
-    // Ground → staircase
-    {
-        id: 'd11', floor: 'ground',
-        start: { lat: 17.38530, lng: 78.48660, label: 'Washroom (Ground)' },
-        end: { lat: 17.38525, lng: 78.48665, label: 'Staircase (Ground)' }
-    },
-
-    // Staircase cross-floor (virtual segment)
-    {
-        id: 'd-stairs', floor: 'ground',
-        start: { lat: 17.38525, lng: 78.48665, label: 'Staircase (Ground)' },
-        end: { lat: 17.38525, lng: 78.48665, label: 'Staircase (First)' },
-        crossFloor: true, toFloor: 'first'
-    },
-
-    // First floor segments
-    {
-        id: 'f1', floor: 'first',
-        start: { lat: 17.38525, lng: 78.48665, label: 'Staircase (First)' },
-        end: { lat: 17.38515, lng: 78.48668, label: 'First Corridor A' }
-    },
-    {
-        id: 'f2', floor: 'first',
-        start: { lat: 17.38515, lng: 78.48668, label: 'First Corridor A' },
-        end: { lat: 17.38510, lng: 78.48658, label: 'Room 201 – English' }
-    },
-    {
-        id: 'f3', floor: 'first',
-        start: { lat: 17.38515, lng: 78.48668, label: 'First Corridor A' },
-        end: { lat: 17.38520, lng: 78.48658, label: 'Room 203 – Economics' }
-    },
-    {
-        id: 'f4', floor: 'first',
-        start: { lat: 17.38515, lng: 78.48668, label: 'First Corridor A' },
-        end: { lat: 17.38505, lng: 78.48668, label: 'First Corridor B' }
-    },
-    {
-        id: 'f5', floor: 'first',
-        start: { lat: 17.38505, lng: 78.48668, label: 'First Corridor B' },
-        end: { lat: 17.38500, lng: 78.48658, label: 'Room 202 – History' }
-    },
-    {
-        id: 'f6', floor: 'first',
-        start: { lat: 17.38505, lng: 78.48668, label: 'First Corridor B' },
-        end: { lat: 17.38505, lng: 78.48655, label: 'HOD Office' }
-    },
-    {
-        id: 'f7', floor: 'first',
-        start: { lat: 17.38525, lng: 78.48665, label: 'Staircase (First)' },
-        end: { lat: 17.38525, lng: 78.48655, label: 'Electronics Lab' }
-    },
-    {
-        id: 'f8', floor: 'first',
-        start: { lat: 17.38525, lng: 78.48665, label: 'Staircase (First)' },
-        end: { lat: 17.38530, lng: 78.48655, label: 'Seminar Hall' }
-    },
-    {
-        id: 'f9', floor: 'first',
-        start: { lat: 17.38525, lng: 78.48665, label: 'Staircase (First)' },
-        end: { lat: 17.38530, lng: 78.48660, label: 'Washroom (First)' }
-    },
-];
-
 // ── Load / Save ────────────────────────────────────────────────
 
 export function loadSegments() {
@@ -147,10 +22,10 @@ export function loadSegments() {
         const raw = localStorage.getItem(LS_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            if (Array.isArray(parsed)) return parsed;
         }
     } catch (_) { }
-    return DEMO_SEGMENTS;
+    return [];   // start empty — admin records the real paths
 }
 
 export function saveSegments(segments) {
