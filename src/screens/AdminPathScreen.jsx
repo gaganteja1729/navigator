@@ -6,6 +6,19 @@ import {
 } from '../utils/walkablePaths.js';
 import '../styles/AdminPath.css';
 
+// ── Predefined Locations ─────────────────────────────────────────
+const CAMPUS_LOCATIONS = [
+    { name: 'Canteen', lat: 17.38520, lng: 78.48670 },
+    { name: 'Main Gate', lat: 17.38500, lng: 78.48600 },
+    { name: 'Dot Net Lab', lat: 17.38550, lng: 78.48700 },
+    { name: 'Main Block', lat: 17.38530, lng: 78.48680 },
+    { name: 'Drinking Water', lat: 17.38525, lng: 78.48690 },
+    { name: 'Computer Block', lat: 17.38560, lng: 78.48710 },
+    { name: 'CME 1st Year', lat: 17.38570, lng: 78.48720 },
+    { name: 'CME 3rd Year', lat: 17.38580, lng: 78.48730 },
+    { name: 'Playground', lat: 17.38450, lng: 78.48800 },
+];
+
 // ── SVG canvas size ──────────────────────────────────────────────
 const W = 380, H = 460;
 
@@ -69,7 +82,7 @@ function LabelModal({ pointType, defaultVal, onConfirm, onSkip }) {
 }
 
 export default function AdminPathScreen() {
-    const { gpsPos, gpsError, goBack, refreshGraph } = useNav();
+    const { gpsPos, gpsError, goBack, refreshGraph, setManualLocation } = useNav();
 
     const [floor, setFloor] = useState('ground');
     const [segments, setSegments] = useState([]);
@@ -106,8 +119,20 @@ export default function AdminPathScreen() {
 
     // ── Recenter map to GPS ──────────────────────────────────────
     const recenter = () => {
-        if (gpsPos) { setMapCenter({ lat: gpsPos.lat, lng: gpsPos.lng }); setStatus('Map recentred to your GPS location.'); }
+        setManualLocation(null); // Clear manual override to use real GPS
+        if (gpsPos) { setMapCenter({ lat: gpsPos.lat, lng: gpsPos.lng }); setStatus('Usage: Real GPS. Map recentred.'); }
         else setStatus('⚠️ GPS not available yet.');
+    };
+
+    const handleLocationSelect = (e) => {
+        const locName = e.target.value;
+        if (!locName) return;
+        const loc = CAMPUS_LOCATIONS.find(l => l.name === locName);
+        if (loc) {
+            setManualLocation({ lat: loc.lat, lng: loc.lng }); // Override GPS
+            setMapCenter({ lat: loc.lat, lng: loc.lng });
+            setStatus(`Location set to ${loc.name}`);
+        }
     };
 
     // ── SVG click handler ────────────────────────────────────────
@@ -287,7 +312,17 @@ export default function AdminPathScreen() {
                         ? `📍 ${gpsPos.lat.toFixed(6)}, ${gpsPos.lng.toFixed(6)}  ±${Math.round(gpsPos.accuracy)}m`
                         : gpsError ? `⚠️ ${gpsError}` : '⏳ Acquiring GPS…'}
                 </span>
-                <button className="ap-recenter-btn" onClick={recenter}>⊕ Centre</button>
+                <button className="ap-recenter-btn" onClick={recenter}>⊕ My GPS</button>
+            </div>
+
+            {/* ── Jump to Location ── */}
+            <div className="ap-gps-row" style={{ marginTop: 8 }}>
+                 <select className="ap-location-select" onChange={handleLocationSelect} defaultValue="">
+                    <option value="" disabled>📍 Jump to location...</option>
+                    {CAMPUS_LOCATIONS.map(l => (
+                        <option key={l.name} value={l.name}>{l.name}</option>
+                    ))}
+                </select>
             </div>
 
             {/* ── Status bar ── */}
