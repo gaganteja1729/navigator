@@ -257,8 +257,13 @@
     transition: transform .15s, opacity .2s;
 }
 
-.ap-btn:hover {
+.ap-btn:hover:not(:disabled) {
     transform: translateY(-2px);
+}
+
+.ap-btn:disabled {
+    opacity: .35;
+    cursor: not-allowed;
 }
 
 .ap-btn.start {
@@ -277,6 +282,18 @@
     border: 1.5px solid var(--border);
     color: var(--text-muted);
     flex: 0.5;
+}
+
+.ap-btn.drop-here {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    color: white;
+}
+
+.ap-btn.undo {
+    background: rgba(245, 158, 11, .15);
+    border: 1.5px solid rgba(245, 158, 11, .4);
+    color: #fbbf24;
+    flex: 0.55;
 }
 
 /* ── Segment list ── */

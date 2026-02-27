@@ -77,8 +77,11 @@ export default function AdminPathScreen() {
 
     // Drop state machine: null | 'needStart' | 'needEnd'
     const [dropMode, setDropMode] = useState(null);
-    const [pendingStart, setPendingStart] = useState(null);   // {lat,lng,label,x,y}
-    const [pendingEnd, setPendingEnd] = useState(null);   // {lat,lng,x,y} (before label)
+    const [pendingStart, setPendingStart] = useState(null);   // {lat,lng,label}
+
+    // Undo stack — each entry is a snapshot of { pendingStart, lastSegId }
+    // lastSegId is set when an end-point was dropped and a segment was saved.
+    const [undoStack, setUndoStack] = useState([]);  // array of { pendingStart, savedSegId }
 
     // Modal
     const [modal, setModal] = useState(null);  // { type:'start'|'end', lat, lng, x, y }
@@ -128,16 +131,20 @@ export default function AdminPathScreen() {
         }
     }, [dropMode, proj]);
 
-    // ── Modal confirm ────────────────────────────────────────────
+    // ── Modal confirm ─────────────────────────────────────────────
     const handleModalConfirm = (label) => {
         if (modal.type === 'start') {
-            setPendingStart({ ...modal, label: label || 'Point' });
+            const newStart = { lat: modal.lat, lng: modal.lng, x: modal.x, y: modal.y, label: label || 'Point' };
+            // Push undo entry (no segment saved yet for start)
+            setUndoStack(s => [...s, { pendingStart: null, savedSegId: null }]);
+            setPendingStart(newStart);
             setDropMode('needEnd');
-            setStatus(`📍 Start set. Now tap the end of this path.`);
+            setStatus('📍 Start dropped. Now tap or press "Drop Here" for the end point.');
         } else {
             // Save segment
+            const segId = `seg-${Date.now()}`;
             const seg = {
-                id: `seg-${Date.now()}`,
+                id: segId,
                 floor,
                 start: { lat: pendingStart.lat, lng: pendingStart.lng, label: pendingStart.label },
                 end: { lat: modal.lat, lng: modal.lng, label: label || 'Point' },
@@ -145,22 +152,60 @@ export default function AdminPathScreen() {
             const updated = addSegment(seg);
             setSegments(updated);
             refreshGraph(updated);
+            // Push undo entry BEFORE updating pendingStart
+            setUndoStack(s => [...s, { pendingStart: { ...pendingStart }, savedSegId: segId }]);
             // Auto-chain: end becomes new start
             setPendingStart({ lat: modal.lat, lng: modal.lng, x: modal.x, y: modal.y, label: label || 'Point' });
             setDropMode('needEnd');
-            setStatus(`✅ Segment saved! Tap next end point, or press ✓ Done.`);
+            setStatus('✅ Segment saved! Drop next end, or press ✓ Done.');
         }
         setModal(null);
     };
 
-    const handleModalSkip = () => {
-        handleModalConfirm('');
+    const handleModalSkip = () => { handleModalConfirm(''); };
+
+    // ── Drop point at current GPS position (button shortcut) ──────
+    const handleDropHere = () => {
+        if (!gpsPos) { setStatus('⚠️ No GPS fix yet — try later.'); return; }
+        const p = proj.project(gpsPos.lat, gpsPos.lng);
+        setModal({ type: dropMode === 'needStart' ? 'start' : 'end', lat: gpsPos.lat, lng: gpsPos.lng, x: p.x, y: p.y });
     };
 
-    // ── Cancel drop mode ─────────────────────────────────────────
+    // ── Undo last dropped point ───────────────────────────────────
+    const handleUndo = () => {
+        if (undoStack.length === 0) {
+            setStatus('Nothing to undo.');
+            return;
+        }
+        const prev = undoStack[undoStack.length - 1];
+        setUndoStack(s => s.slice(0, -1));
+
+        // Remove the saved segment if there was one
+        if (prev.savedSegId) {
+            const updated = deleteSegment(prev.savedSegId);
+            setSegments(updated);
+            refreshGraph(updated);
+        }
+
+        // Restore pendingStart state
+        if (prev.pendingStart === null) {
+            // We were at the very first drop (start), go back to needStart
+            setPendingStart(null);
+            setDropMode('needStart');
+            setStatus('↩ Undone. Tap the map to drop the start point again.');
+        } else {
+            // Restore previous pendingStart and stay in needEnd mode
+            setPendingStart(prev.pendingStart);
+            setDropMode('needEnd');
+            setStatus('↩ Undone. Last segment removed. Drop the end point again.');
+        }
+    };
+
+    // ── Done / Cancel ─────────────────────────────────────────────
     const handleDone = () => {
         setDropMode(null);
         setPendingStart(null);
+        setUndoStack([]);
         setStatus('Path recording finished.');
     };
 
@@ -353,22 +398,34 @@ export default function AdminPathScreen() {
             </div>
 
             {/* ── Action buttons ── */}
-            <div className="ap-actions">
-                {!dropMode ? (
-                    <button className="ap-btn start" onClick={() => { setDropMode('needStart'); setPendingStart(null); setStatus('Tap the map to place the START point.'); }}>
+            {!dropMode ? (
+                <div className="ap-actions">
+                    <button className="ap-btn start" onClick={() => { setDropMode('needStart'); setPendingStart(null); setUndoStack([]); setStatus('Tap the map — or press "Drop Here" — to place the START point.'); }}>
                         ✏️ Draw Path
                     </button>
-                ) : (
-                    <>
+                </div>
+            ) : (
+                <>
+                    {/* Row 1: Drop Here + Undo */}
+                    <div className="ap-actions">
+                        <button className="ap-btn drop-here" onClick={handleDropHere} disabled={!gpsPos}>
+                            📍 Drop Here
+                        </button>
+                        <button className="ap-btn undo" onClick={handleUndo} disabled={undoStack.length === 0}>
+                            ↩ Undo
+                        </button>
+                    </div>
+                    {/* Row 2: Done + Cancel */}
+                    <div className="ap-actions">
                         {dropMode === 'needEnd' && (
                             <button className="ap-btn done" onClick={handleDone}>✓ Done</button>
                         )}
-                        <button className="ap-btn cancel" onClick={() => { setDropMode(null); setPendingStart(null); setStatus('Cancelled.'); }}>
+                        <button className="ap-btn cancel" onClick={() => { setDropMode(null); setPendingStart(null); setUndoStack([]); setStatus('Cancelled.'); }}>
                             ✕ Cancel
                         </button>
-                    </>
-                )}
-            </div>
+                    </div>
+                </>
+            )}
 
             {/* ── Segment list ── */}
             <div className="ap-list-header" onClick={() => setShowList(v => !v)}>
