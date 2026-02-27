@@ -86,13 +86,13 @@ export function NavigationProvider({ children }) {
     // ── GPS ───────────────────────────────────────────────────
     const [gpsPos, setGpsPos] = useState(null);
     const [gpsError, setGpsError] = useState(null);
-    const [manualLocation, setManualLocation] = useState(null); // { lat, lng }
+
 
     useEffect(() => {
-        if (manualLocation) {
-            setGpsPos({ lat: manualLocation.lat, lng: manualLocation.lng, accuracy: 10 });
-            return;
-        }
+
+
+
+
 
         if (!navigator.geolocation) { setGpsError('Geolocation not supported'); return; }
         const id = navigator.geolocation.watchPosition(
@@ -101,7 +101,7 @@ export function NavigationProvider({ children }) {
             { enableHighAccuracy: true, maximumAge: 2000 }
         );
         return () => navigator.geolocation.clearWatch(id);
-    }, [manualLocation]);
+    }, []);
 
     // ── Compass ──────────────────────────────────────────────
     const [compassHeading, setCompassHeading] = useState(0);
@@ -206,7 +206,7 @@ export function NavigationProvider({ children }) {
         // Floor
         currentFloor, selectFloor, changeFloor,
         // GPS
-        gpsPos, gpsError, setManualLocation,
+        gpsPos, gpsError,
         // Destinations
         destNodeId, selectDestination, clearDestination, setArrived,
         nodeMap: campusNodeMap, selectableNodes,

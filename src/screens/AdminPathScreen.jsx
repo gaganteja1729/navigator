@@ -6,6 +6,19 @@ import {
 } from '../utils/walkablePaths.js';
 import '../styles/AdminPath.css';
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ── SVG canvas size ──────────────────────────────────────────────
 const W = 380, H = 460;
 
@@ -107,8 +120,20 @@ export default function AdminPathScreen() {
     // ── Recenter map to GPS ──────────────────────────────────────
     const recenter = () => {
         if (gpsPos) { setMapCenter({ lat: gpsPos.lat, lng: gpsPos.lng }); setStatus('Map recentred to your GPS location.'); }
+
         else setStatus('⚠️ GPS not available yet.');
     };
+
+
+
+
+
+
+
+
+
+
+
 
     // ── SVG click handler ────────────────────────────────────────
     const handleSvgClick = useCallback((e) => {
@@ -288,6 +313,16 @@ export default function AdminPathScreen() {
                         : gpsError ? `⚠️ ${gpsError}` : '⏳ Acquiring GPS…'}
                 </span>
                 <button className="ap-recenter-btn" onClick={recenter}>⊕ Centre</button>
+
+
+
+
+
+
+
+
+
+
             </div>
 
             {/* ── Status bar ── */}
