@@ -3,6 +3,7 @@ import FloorSelectScreen from './screens/FloorSelectScreen.jsx';
 import HomeScreen from './screens/HomeScreen.jsx';
 import FloorMapView from './screens/FloorMapView.jsx';
 import ARView from './screens/ARView.jsx';
+import AdminPathScreen from './screens/AdminPathScreen.jsx';
 import './App.css';
 
 function AppRouter() {
@@ -11,19 +12,16 @@ function AppRouter() {
   // 1. No floor chosen → show floor selector
   if (!currentFloor) return <FloorSelectScreen />;
 
-  // 2. AR mode (destination selected)
+  // 2. Admin path recorder
+  if (viewMode === 'admin') return <AdminPathScreen />;
+
+  // 3. AR mode
   if (viewMode === 'ar' && destNodeId) return <ARView />;
 
-  // 3. Map view (destination selected → show map + home search)
-  if (destNodeId) {
-    return (
-      <div className="nav-split">
-        <FloorMapView />
-      </div>
-    );
-  }
+  // 4. Map view with route
+  if (destNodeId) return <FloorMapView />;
 
-  // 4. Default → Home (destination search)
+  // 5. Default: Home (search)
   return <HomeScreen />;
 }
 

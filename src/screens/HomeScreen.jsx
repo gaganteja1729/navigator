@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import { useNav } from '../context/NavigationContext.jsx';
-import { nodes } from '../data/campusData.js';
 import '../styles/HomeScreen.css';
 
 export default function HomeScreen() {
     const {
         currentFloor, setCurrentFloor,
         setDestNodeId,
-        startNodeId, setStartNodeId,
         gpsPos, gpsError,
         setViewMode,
         selectableNodes,
@@ -22,7 +20,7 @@ export default function HomeScreen() {
 
     const handleSelect = (node) => {
         setDestNodeId(node.id);
-        setViewMode('ar');
+        setViewMode('map');
     };
 
     return (
@@ -35,10 +33,20 @@ export default function HomeScreen() {
                         {gpsPos ? '📍 GPS Active' : gpsError ? '⚠️ No GPS' : '⏳ Getting GPS…'}
                     </span>
                 </div>
-                <p className="hs-floor-label">
-                    You are on: <strong>{currentFloor === 'ground' ? 'Ground Floor' : '1st Floor'}</strong>
-                    <button className="hs-switch-link" onClick={() => setCurrentFloor(null)}>Change</button>
-                </p>
+                <div className="hs-header-bottom-row">
+                    <p className="hs-floor-label">
+                        On: <strong>{currentFloor === 'ground' ? 'Ground Floor' : '1st Floor'}</strong>
+                        <button className="hs-switch-link" onClick={() => setCurrentFloor(null)}>Change</button>
+                    </p>
+                    {/* ── Admin Button ── */}
+                    <button
+                        className="hs-admin-btn"
+                        onClick={() => setViewMode('admin')}
+                        title="Admin: Record walkable paths"
+                    >
+                        🛠️ Admin
+                    </button>
+                </div>
             </div>
 
             {/* Floor tab filter */}
@@ -78,7 +86,7 @@ export default function HomeScreen() {
             {/* Destination list */}
             <div className="hs-list">
                 {filtered.length === 0 && (
-                    <p className="hs-empty">No results for "{query}"</p>
+                    <p className="hs-empty">No results for &ldquo;{query}&rdquo;</p>
                 )}
                 {filtered.map(node => (
                     <button key={node.id} className="hs-dest-card" onClick={() => handleSelect(node)}>
