@@ -9,7 +9,7 @@ export default function ARView() {
         path, waypointIdx,
         arrived, setArrived,
         clearDestination,
-        compassHeading,
+        compassHeading, stableHeading, gpsSpeed,
         goBack, navigate,
         walkGraph,
         adminDest, destName, destIcon,
@@ -107,7 +107,7 @@ export default function ARView() {
                     <span>{destIcon} {destName}</span>
                 </div>
                 <div className="ar-compass">
-                    <div className="ar-compass-needle" style={{ transform: `rotate(${compassHeading}deg)` }}>↑</div>
+                    <div className="ar-compass-needle" style={{ transform: `rotate(${stableHeading}deg)` }}>↑</div>
                 </div>
             </div>
 
@@ -186,7 +186,7 @@ export default function ARView() {
                     </div>
                     <div className="ar-info-box">
                         <span className="ar-info-label">Heading</span>
-                        <span className="ar-info-val">{Math.round(compassHeading)}°</span>
+                        <span className="ar-info-val">{Math.round(stableHeading)}°</span>
                     </div>
                 </div>
                 {cameraError && (

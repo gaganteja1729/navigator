@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { nodes as campusNodes, nodeMap as campusNodeMap, selectableNodes } from '../data/campusData.js';
 import { haversineMetres, bearing } from '../utils/pathfinder.js';
 import { loadSegments, buildGraphFromSegments } from '../utils/walkablePaths.js';
@@ -176,16 +176,67 @@ export function NavigationProvider({ children }) {
         return () => navigator.geolocation.clearWatch(id);
     }, []);
 
-    // ── Compass ──────────────────────────────────────────────
+    // ── Compass (raw + smoothed) ─────────────────────────────
     const [compassHeading, setCompassHeading] = useState(0);
+    const smoothedCompassRef = useRef(0);
+    const [smoothedCompass, setSmoothedCompass] = useState(0);
+
     useEffect(() => {
+        const ALPHA = 0.15; // smoothing factor (lower = smoother, 0.1–0.2 works well)
+
         const handler = e => {
-            const h = e.webkitCompassHeading != null ? e.webkitCompassHeading : (360 - (e.alpha || 0)) % 360;
-            setCompassHeading(h);
+            const raw = e.webkitCompassHeading != null
+                ? e.webkitCompassHeading
+                : (360 - (e.alpha || 0)) % 360;
+
+            setCompassHeading(raw);
+
+            // Circular low-pass filter (handles 0°/360° wraparound)
+            const prev = smoothedCompassRef.current;
+            let diff = raw - prev;
+            if (diff > 180) diff -= 360;
+            if (diff < -180) diff += 360;
+            const next = ((prev + ALPHA * diff) % 360 + 360) % 360;
+            smoothedCompassRef.current = next;
+            setSmoothedCompass(next);
         };
+
         window.addEventListener('deviceorientation', handler, true);
         return () => window.removeEventListener('deviceorientation', handler, true);
     }, []);
+
+    // ── GPS-derived heading (from movement) ─────────────────
+    const prevGpsPosRef = useRef(null);
+    const [gpsHeading, setGpsHeading] = useState(null);  // null if not moving
+    const [gpsSpeed, setGpsSpeed] = useState(0);         // m/s approximate
+
+    useEffect(() => {
+        if (!gpsPos) return;
+        const prev = prevGpsPosRef.current;
+        if (prev) {
+            const d = haversineMetres(prev.lat, prev.lng, gpsPos.lat, gpsPos.lng);
+            // Only compute heading if moved > 2m (avoids noise when stationary)
+            if (d > 2) {
+                const h = bearing(prev.lat, prev.lng, gpsPos.lat, gpsPos.lng);
+                setGpsHeading(h);
+                setGpsSpeed(d); // rough: d metres per GPS update interval
+            } else {
+                setGpsSpeed(0);
+            }
+        }
+        prevGpsPosRef.current = { lat: gpsPos.lat, lng: gpsPos.lng };
+    }, [gpsPos]);
+
+    // ── Stable hybrid heading ──────────────────────────────
+    // Uses GPS heading when walking (more stable), smoothed compass when still
+    const stableHeading = useMemo(() => {
+        if (gpsSpeed > 1.5 && gpsHeading !== null) {
+            // Moving: prefer GPS heading (very stable)
+            return gpsHeading;
+        }
+        // Stationary: use smoothed compass
+        return smoothedCompass;
+    }, [gpsHeading, gpsSpeed, smoothedCompass]);
 
     // ── Admin-saved locations (from localStorage) ─────────────
     const [adminLocations, setAdminLocations] = useState(() => loadLocCoords());
@@ -363,8 +414,9 @@ export function NavigationProvider({ children }) {
         const fromLat = snappedPos ? snappedPos.lat : gpsPos.lat;
         const fromLng = snappedPos ? snappedPos.lng : gpsPos.lng;
         const wb = bearing(fromLat, fromLng, target.lat, target.lng);
-        return (wb - compassHeading + 360) % 360;
-    }, [gpsPos, snappedPos, path, waypointIdx, walkGraph, compassHeading]);
+        // Use stable hybrid heading instead of raw compass
+        return (wb - stableHeading + 360) % 360;
+    }, [gpsPos, snappedPos, path, waypointIdx, walkGraph, stableHeading]);
 
     const distanceToDest = useCallback(() => {
         if (!gpsPos) return null;
@@ -413,7 +465,8 @@ export function NavigationProvider({ children }) {
         // Direction
         directionInstruction,
         // Compass / AR
-        compassHeading, arrowAngle, distanceToDest, distanceToNextWaypoint,
+        compassHeading, smoothedCompass, stableHeading, gpsSpeed,
+        arrowAngle, distanceToDest, distanceToNextWaypoint,
         // Walkable graph
         walkGraph, segments, refreshGraph,
     };
