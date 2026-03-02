@@ -58,10 +58,67 @@ function nearestNodeOnPath(lat, lng, pathIds, nodeMap) {
         const n = nodeMap[id];
         if (!n) continue;
         const d = haversineMetres(lat, lng, n.lat, n.lng);
-        if (d < bestDist) { bestDist = d; best = n; bestDist = d; }
+        if (d < bestDist) { bestDist = d; best = n; }
     }
     return { node: best, dist: bestDist };
 }
+
+// ── Project a point onto the nearest segment of the route path ──
+// Returns { lat, lng, dist, segIdx } where dist = distance from
+// original point to the projected (snapped) point in metres,
+// and segIdx = index of the segment start node in the path.
+function snapToPath(lat, lng, pathIds, nodeMap) {
+    let bestLat = lat, bestLng = lng, bestDist = Infinity, bestSeg = 0;
+
+    for (let i = 0; i < pathIds.length - 1; i++) {
+        const a = nodeMap[pathIds[i]];
+        const b = nodeMap[pathIds[i + 1]];
+        if (!a || !b) continue;
+
+        // Project onto segment A→B using flat-earth approximation
+        const ax = 0, ay = 0;
+        const bx = (b.lng - a.lng) * mPerLng(a.lat);
+        const by = (b.lat - a.lat) * M_PER_LAT;
+        const px = (lng - a.lng) * mPerLng(a.lat);
+        const py = (lat - a.lat) * M_PER_LAT;
+
+        const abx = bx - ax, aby = by - ay;
+        const lenSq = abx * abx + aby * aby;
+        let t = lenSq > 0 ? ((px - ax) * abx + (py - ay) * aby) / lenSq : 0;
+        t = Math.max(0, Math.min(1, t));
+
+        const projX = ax + t * abx;
+        const projY = ay + t * aby;
+        const dx = px - projX, dy = py - projY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestLat = a.lat + projY / M_PER_LAT;
+            bestLng = a.lng + projX / mPerLng(a.lat);
+            bestSeg = i;
+        }
+    }
+
+    // Also check individual nodes (handles single-node paths)
+    for (let i = 0; i < pathIds.length; i++) {
+        const n = nodeMap[pathIds[i]];
+        if (!n) continue;
+        const d = haversineMetres(lat, lng, n.lat, n.lng);
+        if (d < bestDist) {
+            bestDist = d;
+            bestLat = n.lat;
+            bestLng = n.lng;
+            bestSeg = Math.max(0, i - 1);
+        }
+    }
+
+    return { lat: bestLat, lng: bestLng, dist: bestDist, segIdx: bestSeg };
+}
+
+// Approximate metres per degree
+const M_PER_LAT = 111320;
+const mPerLng = (lat) => 111320 * Math.cos((lat * Math.PI) / 180);
 
 // ── Direction instruction from bearing change ─────────────────
 function getDirectionInstruction(prevBearing, currentBearing) {
@@ -77,7 +134,8 @@ function getDirectionInstruction(prevBearing, currentBearing) {
     return '⬆️ Go straight';
 }
 
-const OFF_TRACK_DIST = 15; // metres
+const SNAP_DIST = 30;     // metres — snap to track if within this
+const OFF_TRACK_DIST = 30; // metres — show off-track warning beyond this
 
 export function NavigationProvider({ children }) {
     // ── Screen history stack ──────────────────────────────────
@@ -174,6 +232,10 @@ export function NavigationProvider({ children }) {
     const [directionInstruction, setDirectionInstruction] = useState('');
     const prevBearingRef = useRef(null);
 
+    // Snap-to-track state
+    const [snappedPos, setSnappedPos] = useState(null);  // { lat, lng } on the route
+    const [guideLineTarget, setGuideLineTarget] = useState(null);  // { lat, lng } nearest track point when far
+
     // Select admin destination → navigate to map
     const selectAdminDestination = useCallback((name, lat, lng) => {
         setAdminDest({ name, lat, lng });
@@ -234,28 +296,48 @@ export function NavigationProvider({ children }) {
         setArrived(false);
     }, [destNodeId, adminDest, gpsPos, walkGraph]);
 
-    // ── Advance waypoints + off-track + direction ──────────────
+    // ── Snap to track + advance waypoints + direction ───────────
     useEffect(() => {
-        if (!gpsPos || path.length === 0) return;
+        if (!gpsPos || path.length === 0) {
+            setSnappedPos(null);
+            setGuideLineTarget(null);
+            return;
+        }
 
-        // Off-track detection
-        const { dist: nearestDist } = nearestNodeOnPath(gpsPos.lat, gpsPos.lng, path, walkGraph.nodeMap);
-        setIsOffTrack(nearestDist > OFF_TRACK_DIST);
-        setOffTrackDist(Math.round(nearestDist));
+        // Project GPS onto the nearest point on the route polyline
+        const snap = snapToPath(gpsPos.lat, gpsPos.lng, path, walkGraph.nodeMap);
+
+        if (snap.dist <= SNAP_DIST) {
+            // Close enough — snap user dot onto the track
+            setSnappedPos({ lat: snap.lat, lng: snap.lng });
+            setGuideLineTarget(null);
+            setIsOffTrack(false);
+            setOffTrackDist(0);
+        } else {
+            // Too far — show real GPS and a guideline to nearest track point
+            setSnappedPos(null);
+            setGuideLineTarget({ lat: snap.lat, lng: snap.lng });
+            setIsOffTrack(true);
+            setOffTrackDist(Math.round(snap.dist));
+        }
+
+        // Use snapped position (if available) for waypoint advancement
+        const effectiveLat = snap.dist <= SNAP_DIST ? snap.lat : gpsPos.lat;
+        const effectiveLng = snap.dist <= SNAP_DIST ? snap.lng : gpsPos.lng;
 
         const target = walkGraph.nodeMap[path[waypointIdx]];
         if (!target) return;
-        const d = haversineMetres(gpsPos.lat, gpsPos.lng, target.lat, target.lng);
+        const d = haversineMetres(effectiveLat, effectiveLng, target.lat, target.lng);
 
         // Direction instruction
-        const currentBr = bearing(gpsPos.lat, gpsPos.lng, target.lat, target.lng);
+        const currentBr = bearing(effectiveLat, effectiveLng, target.lat, target.lng);
         if (prevBearingRef.current !== null) {
             setDirectionInstruction(getDirectionInstruction(prevBearingRef.current, currentBr));
         } else {
             setDirectionInstruction('⬆️ Go straight');
         }
 
-        if (d < 5) {
+        if (d < 8) {
             // Vibrate on waypoint arrival
             if (navigator.vibrate) navigator.vibrate(200);
 
@@ -277,9 +359,12 @@ export function NavigationProvider({ children }) {
         if (!gpsPos || path.length === 0) return 0;
         const target = walkGraph.nodeMap[path[waypointIdx]];
         if (!target) return 0;
-        const wb = bearing(gpsPos.lat, gpsPos.lng, target.lat, target.lng);
+        // Use snapped position for bearing if available
+        const fromLat = snappedPos ? snappedPos.lat : gpsPos.lat;
+        const fromLng = snappedPos ? snappedPos.lng : gpsPos.lng;
+        const wb = bearing(fromLat, fromLng, target.lat, target.lng);
         return (wb - compassHeading + 360) % 360;
-    }, [gpsPos, path, waypointIdx, walkGraph, compassHeading]);
+    }, [gpsPos, snappedPos, path, waypointIdx, walkGraph, compassHeading]);
 
     const distanceToDest = useCallback(() => {
         if (!gpsPos) return null;
@@ -321,6 +406,8 @@ export function NavigationProvider({ children }) {
         destName, destIcon,
         // Path
         path, waypointIdx, arrived,
+        // Snap-to-track
+        snappedPos, guideLineTarget,
         // Off-track
         isOffTrack, offTrackDist,
         // Direction

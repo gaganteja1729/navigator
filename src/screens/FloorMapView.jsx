@@ -34,6 +34,7 @@ export default function FloorMapView() {
         isOffTrack, offTrackDist,
         distanceToDest, distanceToNextWaypoint,
         directionInstruction,
+        snappedPos, guideLineTarget,
     } = useNav();
 
     // Determine map center: admin dest → user GPS → default
@@ -73,6 +74,11 @@ export default function FloorMapView() {
 
     const pathStr = pathPoints.map(p => `${p.x},${p.y}`).join(' ');
     const userDot = useMemo(() => gpsPos ? project(gpsPos.lat, gpsPos.lng) : null, [gpsPos, project]);
+    const snappedDot = useMemo(() => snappedPos ? project(snappedPos.lat, snappedPos.lng) : null, [snappedPos, project]);
+    const guideDot = useMemo(() => guideLineTarget ? project(guideLineTarget.lat, guideLineTarget.lng) : null, [guideLineTarget, project]);
+
+    // Which dot to show as the "user" — snapped if on-track, real GPS if off-track
+    const displayDot = snappedDot || userDot;
 
     const distance = distanceToDest();
     const nextDist = distanceToNextWaypoint();
@@ -198,12 +204,29 @@ export default function FloorMapView() {
                         );
                     })()}
 
-                    {/* User GPS dot */}
-                    {userDot && (
+                    {/* User GPS dot — snapped to track when close */}
+                    {displayDot && (
                         <g>
-                            <circle cx={userDot.x} cy={userDot.y} r="12" fill="#6366f1" opacity="0.2" className="fm-user-ripple" />
-                            <circle cx={userDot.x} cy={userDot.y} r="6" fill="#818cf8" stroke="white" strokeWidth="1.5" />
-                            <circle cx={userDot.x} cy={userDot.y} r="2.5" fill="white" />
+                            <circle cx={displayDot.x} cy={displayDot.y} r="12" fill="#6366f1" opacity="0.2" className="fm-user-ripple" />
+                            <circle cx={displayDot.x} cy={displayDot.y} r="6" fill="#818cf8" stroke="white" strokeWidth="1.5" />
+                            <circle cx={displayDot.x} cy={displayDot.y} r="2.5" fill="white" />
+                        </g>
+                    )}
+
+                    {/* Guide line from real GPS to nearest track point (when off-track) */}
+                    {userDot && guideDot && isOffTrack && (
+                        <g>
+                            <line
+                                x1={userDot.x} y1={userDot.y}
+                                x2={guideDot.x} y2={guideDot.y}
+                                stroke="#f59e0b" strokeWidth="2"
+                                strokeDasharray="4 3" strokeLinecap="round"
+                                opacity="0.8"
+                            />
+                            {/* Small real GPS dot (dimmer) */}
+                            <circle cx={userDot.x} cy={userDot.y} r="4" fill="#f59e0b" opacity="0.5" />
+                            {/* Track-snap target dot */}
+                            <circle cx={guideDot.x} cy={guideDot.y} r="4" fill="#f59e0b" stroke="white" strokeWidth="1" />
                         </g>
                     )}
 
