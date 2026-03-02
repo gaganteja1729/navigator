@@ -328,13 +328,17 @@ export default function AdminPathScreen() {
         refreshGraph(updated);
     };
 
-    // ── Clear all segments ───────────────────────────────────────
+    // ── Clear all segments + saved location GPS ───────────────────
     const handleClearAll = () => {
-        if (!window.confirm('Delete ALL recorded paths?')) return;
+        if (!window.confirm('Delete ALL recorded paths AND all saved location GPS coordinates?')) return;
         saveSegments([]);
         setSegments([]);
         refreshGraph([]);
-        setStatus('All paths cleared.');
+        saveLocCoords({});
+        setSavedLocCoords({});
+        setMockLocation(null);
+        setShowLocPicker(false);
+        setStatus('All paths and saved location GPS cleared.');
     };
 
     // ── Import JSON ──────────────────────────────────────────────
