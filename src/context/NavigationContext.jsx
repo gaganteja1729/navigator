@@ -284,11 +284,6 @@ export function NavigationProvider({ children }) {
     const [isOffTrack, setIsOffTrack] = useState(false);
     const [offTrackDist, setOffTrackDist] = useState(0);
     const [directionInstruction, setDirectionInstruction] = useState('');
-    // Ref so the snap/advance effect can read heading without re-subscribing
-    const stableHeadingRef = useRef(0);
-
-    // Keep stableHeadingRef in sync so the gpsPos effect can read latest heading
-    useEffect(() => { stableHeadingRef.current = stableHeading; }, [stableHeading]);
 
     // Snap-to-track state
     const [snappedPos, setSnappedPos] = useState(null);  // { lat, lng } on the route
@@ -387,9 +382,6 @@ export function NavigationProvider({ children }) {
         if (!target) return;
         const d = haversineMetres(effectiveLat, effectiveLng, target.lat, target.lng);
 
-        // Direction instruction: compare user's current travel heading to the route bearing
-        const currentBr = bearing(effectiveLat, effectiveLng, target.lat, target.lng);
-        setDirectionInstruction(getDirectionFromHeading(stableHeadingRef.current, currentBr));
 
         if (d < 8) {
             // Vibrate on waypoint arrival
@@ -404,8 +396,24 @@ export function NavigationProvider({ children }) {
                 if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
             }
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [gpsPos]);
+
+    // ── Direction instruction (live — updates on compass AND GPS changes) ──
+    // This mirrors Google Maps: the "turn left/right" banner refreshes every time
+    // the user rotates their phone, not just when GPS ticks.
+    useEffect(() => {
+        if (!gpsPos || path.length === 0) {
+            setDirectionInstruction('');
+            return;
+        }
+        const target = walkGraph.nodeMap[path[waypointIdx]];
+        if (!target) return;
+        // Prefer snapped position for bearing accuracy
+        const fromLat = snappedPos ? snappedPos.lat : gpsPos.lat;
+        const fromLng = snappedPos ? snappedPos.lng : gpsPos.lng;
+        const br = bearing(fromLat, fromLng, target.lat, target.lng);
+        setDirectionInstruction(getDirectionFromHeading(stableHeading, br));
+    }, [stableHeading, gpsPos, snappedPos, path, waypointIdx, walkGraph]);
 
     // ── AR values ─────────────────────────────────────────────
     const arrowAngle = useCallback(() => {
