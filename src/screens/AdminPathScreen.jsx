@@ -537,6 +537,47 @@ export default function AdminPathScreen() {
                         );
                     })}
 
+                    {/* ── Saved campus location markers ── */}
+                    {CAMPUS_LOCATIONS.map(loc => {
+                        const saved = savedLocCoords[loc.name];
+                        if (!saved) return null;
+                        const p = proj.project(saved.lat, saved.lng);
+                        const isActive = mockLocation?.name === loc.name;
+                        const pinColor = isActive ? '#f59e0b' : '#fb923c';
+                        const textColor = isActive ? '#fde68a' : '#fed7aa';
+                        const r = isActive ? 7 : 5;
+                        // Abbreviate name to fit on map
+                        const shortName = loc.name.length > 10 ? loc.name.slice(0, 9) + '…' : loc.name;
+                        return (
+                            <g key={loc.name}>
+                                {/* Outer pulse ring for active */}
+                                {isActive && (
+                                    <circle cx={p.x} cy={p.y} r="13" fill="rgba(245,158,11,.18)" className="ap-pulse-ring" />
+                                )}
+                                {/* Diamond pin */}
+                                <rect
+                                    x={p.x - r} y={p.y - r}
+                                    width={r * 2} height={r * 2}
+                                    fill={pinColor}
+                                    stroke={isActive ? 'white' : '#1a0a00'}
+                                    strokeWidth={isActive ? 1.5 : 1}
+                                    transform={`rotate(45 ${p.x} ${p.y})`}
+                                />
+                                {/* Label */}
+                                <text
+                                    x={p.x} y={p.y - r - 5}
+                                    textAnchor="middle"
+                                    fill={textColor}
+                                    fontSize={isActive ? 8 : 7}
+                                    fontWeight={isActive ? 'bold' : 'normal'}
+                                    fontFamily="Inter"
+                                >
+                                    {shortName}
+                                </text>
+                            </g>
+                        );
+                    })}
+
                     {/* ── Pending start point ── */}
                     {pendingStart && (() => {
                         const p = proj.project(pendingStart.lat, pendingStart.lng);
