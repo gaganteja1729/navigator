@@ -19,6 +19,18 @@ const CAMPUS_LOCATIONS = [
     { name: 'Playground', lat: 17.38460, lng: 78.48620 },
 ];
 
+// ── localStorage helpers for saved location coords ────────────────
+const LOC_STORAGE_KEY = 'campus_loc_coords';
+
+function loadLocCoords() {
+    try { return JSON.parse(localStorage.getItem(LOC_STORAGE_KEY) || '{}'); }
+    catch { return {}; }
+}
+
+function saveLocCoords(map) {
+    localStorage.setItem(LOC_STORAGE_KEY, JSON.stringify(map));
+}
+
 
 
 
@@ -116,9 +128,17 @@ export default function AdminPathScreen() {
     const [mockLocation, setMockLocation] = useState(null);  // { name, lat, lng } | null
     const [showLocPicker, setShowLocPicker] = useState(false);
 
-    // Effective GPS: prefer mock override, fall back to real GPS
+    // Saved GPS overrides per location name (persisted in localStorage)
+    const [savedLocCoords, setSavedLocCoords] = useState(() => loadLocCoords());
+
+    // Effective GPS:
+    //   1. If a campus location is selected AND it has saved GPS coords → use saved coords
+    //   2. If a campus location is selected but no saved coords → use its default lat/lng
+    //   3. Otherwise → use real GPS
     const effectiveGps = mockLocation
-        ? { lat: mockLocation.lat, lng: mockLocation.lng, accuracy: 1 }
+        ? savedLocCoords[mockLocation.name]
+            ? { ...savedLocCoords[mockLocation.name], accuracy: 1 }
+            : { lat: mockLocation.lat, lng: mockLocation.lng, accuracy: 1 }
         : gpsPos;
 
     const [status, setStatus] = useState('Tap "Draw Path" then tap two points on the map.');
@@ -147,16 +167,48 @@ export default function AdminPathScreen() {
 
     // ── Campus location picker ───────────────────────────────────
     const handleSelectLocation = (loc) => {
+        // Use saved coords if they exist, otherwise default placeholder
+        const saved = savedLocCoords[loc.name];
+        const pinLat = saved ? saved.lat : loc.lat;
+        const pinLng = saved ? saved.lng : loc.lng;
         setMockLocation(loc);
         setShowLocPicker(false);
-        setMapCenter({ lat: loc.lat, lng: loc.lng });
-        setStatus(`📌 Location pinned to: ${loc.name}`);
+        setMapCenter({ lat: pinLat, lng: pinLng });
+        setStatus(saved
+            ? `📌 ${loc.name} — using saved GPS (${pinLat.toFixed(5)}, ${pinLng.toFixed(5)})`
+            : `📌 Location pinned to: ${loc.name} (placeholder coords)`);
     };
 
     const handleClearMock = () => {
         setMockLocation(null);
         setShowLocPicker(false);
         setStatus('Location unpinned — using real GPS.');
+    };
+
+    // ── Save real GPS as selected location's coordinates ──────────
+    const handleSaveLocation = () => {
+        if (!mockLocation) return;
+        if (!gpsPos) { setStatus('⚠️ Real GPS not available — move outside and try again.'); return; }
+        const updated = { ...savedLocCoords, [mockLocation.name]: { lat: gpsPos.lat, lng: gpsPos.lng } };
+        saveLocCoords(updated);
+        setSavedLocCoords(updated);
+        // Also update the pinned location coords instantly
+        setMockLocation(prev => ({ ...prev, lat: gpsPos.lat, lng: gpsPos.lng }));
+        setMapCenter({ lat: gpsPos.lat, lng: gpsPos.lng });
+        setStatus(`✅ Saved! ${mockLocation.name} → (${gpsPos.lat.toFixed(6)}, ${gpsPos.lng.toFixed(6)})`);
+    };
+
+    // ── Delete saved GPS for selected location ────────────────────
+    const handleDeleteLocationCoords = () => {
+        if (!mockLocation) return;
+        const updated = { ...savedLocCoords };
+        delete updated[mockLocation.name];
+        saveLocCoords(updated);
+        setSavedLocCoords(updated);
+        // Revert pin to placeholder coords
+        const base = CAMPUS_LOCATIONS.find(l => l.name === mockLocation.name);
+        if (base) { setMockLocation(base); setMapCenter({ lat: base.lat, lng: base.lng }); }
+        setStatus(`🗑 Deleted saved GPS for ${mockLocation.name}. Using placeholder coords.`);
     };
 
 
@@ -355,17 +407,45 @@ export default function AdminPathScreen() {
             {/* ── Location Picker row ── */}
             <div className="ap-loc-row">
                 <div className="ap-loc-picker-wrap">
+                    {/* Dropdown toggle */}
                     <button
                         className={`ap-loc-btn ${mockLocation ? 'active' : ''}`}
                         onClick={() => setShowLocPicker(v => !v)}
                     >
                         🏫 {mockLocation ? mockLocation.name : 'Set Location'} ▾
                     </button>
+
+                    {/* Save real GPS as this location's coords */}
                     {mockLocation && (
-                        <button className="ap-loc-clear" onClick={handleClearMock} title="Use real GPS">
+                        <button
+                            className="ap-loc-save"
+                            onClick={handleSaveLocation}
+                            disabled={!gpsPos}
+                            title={gpsPos ? 'Save real GPS as this location' : 'No real GPS available'}
+                        >
+                            💾 Save
+                        </button>
+                    )}
+
+                    {/* Delete saved GPS coords for this location */}
+                    {mockLocation && savedLocCoords[mockLocation.name] && (
+                        <button
+                            className="ap-loc-delete"
+                            onClick={handleDeleteLocationCoords}
+                            title="Delete saved GPS for this location"
+                        >
+                            🗑 Delete
+                        </button>
+                    )}
+
+                    {/* Unpin / clear selection */}
+                    {mockLocation && (
+                        <button className="ap-loc-clear" onClick={handleClearMock} title="Unpin location">
                             ✕
                         </button>
                     )}
+
+                    {/* Dropdown list */}
                     {showLocPicker && (
                         <div className="ap-loc-dropdown">
                             {CAMPUS_LOCATIONS.map(loc => (
@@ -374,7 +454,8 @@ export default function AdminPathScreen() {
                                     className={`ap-loc-option ${mockLocation?.name === loc.name ? 'selected' : ''}`}
                                     onClick={() => handleSelectLocation(loc)}
                                 >
-                                    📍 {loc.name}
+                                    {savedLocCoords[loc.name] ? '📍' : '○'} {loc.name}
+                                    {savedLocCoords[loc.name] && <span className="ap-loc-saved-badge">GPS saved</span>}
                                 </button>
                             ))}
                         </div>

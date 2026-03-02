@@ -590,3 +590,57 @@
     color: #6ee7b7;
     font-weight: 600;
 }
+
+/* ── Save button ── */
+.ap-loc-save {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(16, 185, 129, .15);
+    border: 1.5px solid rgba(16, 185, 129, .4);
+    color: #6ee7b7;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all .2s;
+}
+
+.ap-loc-save:hover:not(:disabled) {
+    background: rgba(16, 185, 129, .28);
+}
+
+.ap-loc-save:disabled {
+    opacity: .35;
+    cursor: not-allowed;
+}
+
+/* ── Delete button ── */
+.ap-loc-delete {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(239, 68, 68, .12);
+    border: 1.5px solid rgba(239, 68, 68, .4);
+    color: #f87171;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all .2s;
+}
+
+.ap-loc-delete:hover {
+    background: rgba(239, 68, 68, .25);
+}
+
+/* ── "GPS saved" badge in dropdown ── */
+.ap-loc-saved-badge {
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 9px;
+    font-size: 9px;
+    font-weight: 700;
+    background: rgba(16, 185, 129, .18);
+    color: #6ee7b7;
+    border: 1px solid rgba(16, 185, 129, .35);
+    vertical-align: middle;
+}
