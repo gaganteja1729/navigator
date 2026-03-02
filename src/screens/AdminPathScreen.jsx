@@ -6,6 +6,19 @@ import {
 } from '../utils/walkablePaths.js';
 import '../styles/AdminPath.css';
 
+// ── Predefined campus locations ───────────────────────────────────
+const CAMPUS_LOCATIONS = [
+    { name: 'Canteen', lat: 17.38520, lng: 78.48670 },
+    { name: 'Main Gate', lat: 17.38480, lng: 78.48640 },
+    { name: 'Dot Net Lab', lat: 17.38510, lng: 78.48690 },
+    { name: 'Main Block', lat: 17.38530, lng: 78.48660 },
+    { name: 'Drinking Water', lat: 17.38505, lng: 78.48655 },
+    { name: 'Compute Block', lat: 17.38540, lng: 78.48680 },
+    { name: 'CME 1st Year', lat: 17.38495, lng: 78.48700 },
+    { name: 'CME 3rd Year', lat: 17.38550, lng: 78.48710 },
+    { name: 'Playground', lat: 17.38460, lng: 78.48620 },
+];
+
 
 
 
@@ -99,16 +112,25 @@ export default function AdminPathScreen() {
     // Modal
     const [modal, setModal] = useState(null);  // { type:'start'|'end', lat, lng, x, y }
 
+    // ── Mock / pinned location ────────────────────────────────────
+    const [mockLocation, setMockLocation] = useState(null);  // { name, lat, lng } | null
+    const [showLocPicker, setShowLocPicker] = useState(false);
+
+    // Effective GPS: prefer mock override, fall back to real GPS
+    const effectiveGps = mockLocation
+        ? { lat: mockLocation.lat, lng: mockLocation.lng, accuracy: 1 }
+        : gpsPos;
+
     const [status, setStatus] = useState('Tap "Draw Path" then tap two points on the map.');
     const svgRef = useRef(null);
     const importRef = useRef(null);
 
     // ── GPS centre for the map ───────────────────────────────────
-    // Use GPS if available; fall back to a neutral centre
+    // Use effective GPS (mock override or real) if available; fall back to neutral centre
     const [mapCenter, setMapCenter] = useState({ lat: 17.38515, lng: 78.48665 });
     useEffect(() => {
-        if (gpsPos) setMapCenter({ lat: gpsPos.lat, lng: gpsPos.lng });
-    }, [gpsPos]);
+        if (effectiveGps) setMapCenter({ lat: effectiveGps.lat, lng: effectiveGps.lng });
+    }, [effectiveGps]);
 
     const proj = makeProjection(mapCenter.lat, mapCenter.lng);
 
@@ -119,9 +141,22 @@ export default function AdminPathScreen() {
 
     // ── Recenter map to GPS ──────────────────────────────────────
     const recenter = () => {
-        if (gpsPos) { setMapCenter({ lat: gpsPos.lat, lng: gpsPos.lng }); setStatus('Map recentred to your GPS location.'); }
-
+        if (effectiveGps) { setMapCenter({ lat: effectiveGps.lat, lng: effectiveGps.lng }); setStatus(mockLocation ? `Map recentred to ${mockLocation.name}.` : 'Map recentred to your GPS location.'); }
         else setStatus('⚠️ GPS not available yet.');
+    };
+
+    // ── Campus location picker ───────────────────────────────────
+    const handleSelectLocation = (loc) => {
+        setMockLocation(loc);
+        setShowLocPicker(false);
+        setMapCenter({ lat: loc.lat, lng: loc.lng });
+        setStatus(`📌 Location pinned to: ${loc.name}`);
+    };
+
+    const handleClearMock = () => {
+        setMockLocation(null);
+        setShowLocPicker(false);
+        setStatus('Location unpinned — using real GPS.');
     };
 
 
@@ -191,9 +226,9 @@ export default function AdminPathScreen() {
 
     // ── Drop point at current GPS position (button shortcut) ──────
     const handleDropHere = () => {
-        if (!gpsPos) { setStatus('⚠️ No GPS fix yet — try later.'); return; }
-        const p = proj.project(gpsPos.lat, gpsPos.lng);
-        setModal({ type: dropMode === 'needStart' ? 'start' : 'end', lat: gpsPos.lat, lng: gpsPos.lng, x: p.x, y: p.y });
+        if (!effectiveGps) { setStatus('⚠️ No GPS fix yet — try later.'); return; }
+        const p = proj.project(effectiveGps.lat, effectiveGps.lng);
+        setModal({ type: dropMode === 'needStart' ? 'start' : 'end', lat: effectiveGps.lat, lng: effectiveGps.lng, x: p.x, y: p.y });
     };
 
     // ── Undo last dropped point ───────────────────────────────────
@@ -270,7 +305,7 @@ export default function AdminPathScreen() {
     };
 
     // ── GPS user dot ─────────────────────────────────────────────
-    const gpsDot = gpsPos ? proj.project(gpsPos.lat, gpsPos.lng) : null;
+    const gpsDot = effectiveGps ? proj.project(effectiveGps.lat, effectiveGps.lng) : null;
 
     return (
         <div className="ap-root">
@@ -307,22 +342,44 @@ export default function AdminPathScreen() {
 
             {/* ── GPS row ── */}
             <div className="ap-gps-row">
-                <span className={`ap-gps-badge ${gpsPos ? 'ok' : 'bad'}`}>
-                    {gpsPos
-                        ? `📍 ${gpsPos.lat.toFixed(6)}, ${gpsPos.lng.toFixed(6)}  ±${Math.round(gpsPos.accuracy)}m`
-                        : gpsError ? `⚠️ ${gpsError}` : '⏳ Acquiring GPS…'}
+                <span className={`ap-gps-badge ${effectiveGps ? 'ok' : 'bad'}`}>
+                    {mockLocation
+                        ? `📌 ${mockLocation.name} (${mockLocation.lat.toFixed(5)}, ${mockLocation.lng.toFixed(5)})`
+                        : effectiveGps
+                            ? `📍 ${effectiveGps.lat.toFixed(6)}, ${effectiveGps.lng.toFixed(6)}  ±${Math.round(effectiveGps.accuracy)}m`
+                            : gpsError ? `⚠️ ${gpsError}` : '⏳ Acquiring GPS…'}
                 </span>
                 <button className="ap-recenter-btn" onClick={recenter}>⊕ Centre</button>
+            </div>
 
-
-
-
-
-
-
-
-
-
+            {/* ── Location Picker row ── */}
+            <div className="ap-loc-row">
+                <div className="ap-loc-picker-wrap">
+                    <button
+                        className={`ap-loc-btn ${mockLocation ? 'active' : ''}`}
+                        onClick={() => setShowLocPicker(v => !v)}
+                    >
+                        🏫 {mockLocation ? mockLocation.name : 'Set Location'} ▾
+                    </button>
+                    {mockLocation && (
+                        <button className="ap-loc-clear" onClick={handleClearMock} title="Use real GPS">
+                            ✕
+                        </button>
+                    )}
+                    {showLocPicker && (
+                        <div className="ap-loc-dropdown">
+                            {CAMPUS_LOCATIONS.map(loc => (
+                                <button
+                                    key={loc.name}
+                                    className={`ap-loc-option ${mockLocation?.name === loc.name ? 'selected' : ''}`}
+                                    onClick={() => handleSelectLocation(loc)}
+                                >
+                                    📍 {loc.name}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* ── Status bar ── */}
@@ -443,7 +500,7 @@ export default function AdminPathScreen() {
                 <>
                     {/* Row 1: Drop Here + Undo */}
                     <div className="ap-actions">
-                        <button className="ap-btn drop-here" onClick={handleDropHere} disabled={!gpsPos}>
+                        <button className="ap-btn drop-here" onClick={handleDropHere} disabled={!effectiveGps}>
                             📍 Drop Here
                         </button>
                         <button className="ap-btn undo" onClick={handleUndo} disabled={undoStack.length === 0}>
