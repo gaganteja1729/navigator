@@ -1,45 +1,82 @@
 import { useMemo } from 'react';
 import { useNav } from '../context/NavigationContext.jsx';
-import { nodes } from '../data/campusData.js';
+import { haversineMetres } from '../utils/pathfinder.js';
 import '../styles/FloorMap.css';
 
 const W = 400, H = 480;
-const LAT_MIN = 17.38495, LAT_MAX = 17.38535;
-const LNG_MIN = 78.48645, LNG_MAX = 78.48680;
+const SPAN_M = 120; // metres across the view
+const M_PER_LAT = 111320;
+const mPerLng = (lat) => 111320 * Math.cos((lat * Math.PI) / 180);
 
-function project(lat, lng) {
-    return {
-        x: ((lng - LNG_MIN) / (LNG_MAX - LNG_MIN)) * (W - 60) + 30,
-        y: ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * (H - 80) + 40,
-    };
+function makeProjection(centerLat, centerLng) {
+    const halfLatDeg = (SPAN_M / 2) / M_PER_LAT;
+    const halfLngDeg = (SPAN_M / 2) / mPerLng(centerLat);
+    const PAD = 30;
+    const usableW = W - PAD * 2;
+    const usableH = H - PAD * 2;
+
+    return (lat, lng) => ({
+        x: ((lng - (centerLng - halfLngDeg)) / (2 * halfLngDeg)) * usableW + PAD,
+        y: (((centerLat + halfLatDeg) - lat) / (2 * halfLatDeg)) * usableH + PAD,
+    });
 }
-
-const ROOM_SIZE = 18;
 
 export default function FloorMapView() {
     const {
-        currentFloor, changeFloor,
         path, waypointIdx,
         destNodeId, clearDestination,
         nodeMap, navigate,
         gpsPos,
-        walkGraph,
+        walkGraph, segments,
         goBack,
+        adminDest, adminLocations,
+        destName, destIcon,
+        isOffTrack, offTrackDist,
+        distanceToDest, distanceToNextWaypoint,
+        directionInstruction,
     } = useNav();
 
-    const floorNodes = useMemo(() => nodes.filter(n => n.floor === currentFloor), [currentFloor]);
+    // Determine map center: admin dest → user GPS → default
+    const center = useMemo(() => {
+        if (adminDest) return { lat: adminDest.lat, lng: adminDest.lng };
+        if (gpsPos) return { lat: gpsPos.lat, lng: gpsPos.lng };
+        return { lat: 17.38515, lng: 78.48665 };
+    }, [adminDest, gpsPos]);
 
-    // Path polyline — use walkable graph nodes for real positions
+    const project = useMemo(() => makeProjection(center.lat, center.lng), [center]);
+
+    // Draw all walkable segments
+    const segLines = useMemo(() => {
+        return segments.map(seg => {
+            const s = project(seg.start.lat, seg.start.lng);
+            const e = project(seg.end.lat, seg.end.lng);
+            return { id: seg.id, sx: s.x, sy: s.y, ex: e.x, ey: e.y };
+        });
+    }, [segments, project]);
+
+    // Admin location markers
+    const adminMarkers = useMemo(() => {
+        return Object.entries(adminLocations).map(([name, coords]) => {
+            const p = project(coords.lat, coords.lng);
+            const isDest = adminDest?.name === name;
+            return { name, ...p, isDest };
+        });
+    }, [adminLocations, project, adminDest]);
+
+    // Route path points
     const pathPoints = useMemo(() => {
         return path
             .map(id => walkGraph.nodeMap[id])
             .filter(Boolean)
-            .filter(n => n.floor === currentFloor || n.type === 'staircase')
             .map(n => project(n.lat, n.lng));
-    }, [path, currentFloor, walkGraph]);
+    }, [path, walkGraph, project]);
 
     const pathStr = pathPoints.map(p => `${p.x},${p.y}`).join(' ');
-    const userDot = useMemo(() => gpsPos ? project(gpsPos.lat, gpsPos.lng) : null, [gpsPos]);
+    const userDot = useMemo(() => gpsPos ? project(gpsPos.lat, gpsPos.lng) : null, [gpsPos, project]);
+
+    const distance = distanceToDest();
+    const nextDist = distanceToNextWaypoint();
+    const nextNode = path[waypointIdx] ? walkGraph.nodeMap[path[waypointIdx]] : null;
 
     return (
         <div className="fm-root">
@@ -47,100 +84,164 @@ export default function FloorMapView() {
             <div className="fm-header">
                 <button className="fm-back-btn" onClick={goBack}>‹ Back</button>
                 <h2 className="fm-title">🗺️ Campus Map</h2>
-                <div className="fm-floor-tabs">
-                    <button className={`fm-tab ${currentFloor === 'ground' ? 'active' : ''}`} onClick={() => changeFloor('ground')}>
-                        Ground
-                    </button>
-                    <button className={`fm-tab ${currentFloor === 'first' ? 'active' : ''}`} onClick={() => changeFloor('first')}>
-                        1st
-                    </button>
-                </div>
+                <div style={{ width: 60 }} />
             </div>
+
+            {/* Off-track banner */}
+            {isOffTrack && (
+                <div className="fm-offtrack-banner">
+                    <span className="fm-offtrack-icon">⚠️</span>
+                    <span>Off route ({offTrackDist}m away) — rerouting…</span>
+                </div>
+            )}
+
+            {/* Direction instruction */}
+            {directionInstruction && !isOffTrack && path.length > 0 && (
+                <div className="fm-direction-banner">
+                    <span className="fm-direction-text">{directionInstruction}</span>
+                    {nextNode?.label && (
+                        <span className="fm-direction-target">toward {nextNode.label}</span>
+                    )}
+                </div>
+            )}
 
             {/* SVG Map */}
             <div className="fm-map-wrap">
                 <svg viewBox={`0 0 ${W} ${H}`} className="fm-svg">
-                    <rect x="0" y="0" width={W} height={H} fill="#0f1117" rx="12" />
-                    <rect x="20" y="30" width={W - 40} height={H - 60} fill="#1a1e2e" stroke="#334" strokeWidth="2" rx="8" />
+                    {/* Background */}
+                    <rect x="0" y="0" width={W} height={H} fill="#09101e" rx="12" />
 
-                    <text x={W / 2} y="22" textAnchor="middle" fill="#5566aa" fontSize="11" fontFamily="Inter">
-                        {currentFloor === 'ground' ? 'Ground Floor' : 'First Floor'}
+                    {/* Grid */}
+                    {Array.from({ length: 9 }).map((_, i) => {
+                        const x = 30 + (i + 1) * ((W - 60) / 10);
+                        const y = 30 + (i + 1) * ((H - 60) / 10);
+                        return (
+                            <g key={i} opacity="0.06">
+                                <line x1={x} y1={30} x2={x} y2={H - 30} stroke="#6366f1" strokeWidth="0.5" />
+                                <line x1={30} y1={y} x2={W - 30} y2={y} stroke="#6366f1" strokeWidth="0.5" />
+                            </g>
+                        );
+                    })}
+
+                    {/* Border */}
+                    <rect x="30" y="30" width={W - 60} height={H - 60}
+                        fill="none" stroke="#1e2540" strokeWidth="1.5" rx="6" />
+
+                    {/* Compass */}
+                    <text x={W - 36} y={46} textAnchor="middle" fill="#6366f1" fontSize="11" fontWeight="bold">N</text>
+                    <line x1={W - 36} y1={50} x2={W - 36} y2={62} stroke="#6366f1" strokeWidth="1.5" />
+
+                    {/* Scale hint */}
+                    <text x={32} y={H - 18} fill="#334" fontSize="8" fontFamily="monospace">
+                        {SPAN_M}m span
                     </text>
 
-                    {/* Room nodes */}
-                    {floorNodes.map(n => {
-                        const { x, y } = project(n.lat, n.lng);
-                        const isPath = path.some(id => {
-                            const wn = walkGraph.nodeMap[id];
-                            return wn && Math.abs(wn.lat - n.lat) < 0.00002 && Math.abs(wn.lng - n.lng) < 0.00002;
-                        });
-                        const isDest = n.id === destNodeId;
+                    {/* ── Walkable path segments ── */}
+                    {segLines.map(seg => (
+                        <line key={seg.id}
+                            x1={seg.sx} y1={seg.sy} x2={seg.ex} y2={seg.ey}
+                            stroke="#1e2d4a" strokeWidth="2.5" strokeLinecap="round"
+                        />
+                    ))}
+
+                    {/* ── Route path ── */}
+                    {pathStr && (
+                        <polyline points={pathStr} fill="none" stroke="#6366f1"
+                            strokeWidth="4" strokeDasharray="8 5" strokeLinecap="round"
+                            className="fm-route-line" />
+                    )}
+
+                    {/* ── Admin location markers ── */}
+                    {adminMarkers.map(m => {
+                        const r = m.isDest ? 8 : 6;
+                        const pinColor = m.isDest ? '#f59e0b' : '#fb923c';
+                        const textColor = m.isDest ? '#fde68a' : '#fed7aa';
+                        const shortName = m.name.length > 12 ? m.name.slice(0, 11) + '…' : m.name;
                         return (
-                            <g key={n.id}>
-                                <rect x={x - ROOM_SIZE / 2} y={y - ROOM_SIZE / 2} width={ROOM_SIZE} height={ROOM_SIZE}
-                                    rx="4"
-                                    fill={isDest ? '#f59e0b' : isPath ? '#6366f1' : n.type === 'staircase' ? '#10b981' : '#1e2540'}
-                                    stroke={isDest ? '#fbbf24' : isPath ? '#818cf8' : '#334'}
-                                    strokeWidth={isDest ? 2 : 1}
-                                    className={isDest ? 'fm-dest-rect' : ''}
+                            <g key={m.name}>
+                                {m.isDest && (
+                                    <circle cx={m.x} cy={m.y} r="14" fill="rgba(245,158,11,.15)" className="fm-dest-pulse" />
+                                )}
+                                <rect
+                                    x={m.x - r} y={m.y - r}
+                                    width={r * 2} height={r * 2}
+                                    fill={pinColor}
+                                    stroke={m.isDest ? 'white' : '#1a0a00'}
+                                    strokeWidth={m.isDest ? 1.5 : 1}
+                                    transform={`rotate(45 ${m.x} ${m.y})`}
                                 />
-                                <text x={x} y={y + ROOM_SIZE + 8} textAnchor="middle"
-                                    fill={isDest ? '#fcd34d' : isPath ? '#a5b4fc' : '#8899bb'}
-                                    fontSize="7" fontFamily="Inter">
-                                    {n.name.length > 18 ? n.name.slice(0, 16) + '…' : n.name}
+                                <text
+                                    x={m.x} y={m.y - r - 6}
+                                    textAnchor="middle"
+                                    fill={textColor}
+                                    fontSize={m.isDest ? 9 : 7}
+                                    fontWeight={m.isDest ? 'bold' : 'normal'}
+                                    fontFamily="Inter"
+                                >
+                                    {shortName}
                                 </text>
                             </g>
                         );
                     })}
 
-                    {/* Route */}
-                    {pathStr && (
-                        <polyline points={pathStr} fill="none" stroke="#6366f1"
-                            strokeWidth="3" strokeDasharray="6 4" strokeLinecap="round" className="fm-route-line" />
-                    )}
-
                     {/* Current waypoint pulse */}
                     {(() => {
                         const wn = walkGraph.nodeMap[path[waypointIdx]];
-                        if (!wn || wn.floor !== currentFloor) return null;
-                        const { x, y } = project(wn.lat, wn.lng);
-                        return <circle cx={x} cy={y} r="7" fill="none" stroke="#6366f1" strokeWidth="2" className="fm-waypoint-pulse" />;
+                        if (!wn) return null;
+                        const p = project(wn.lat, wn.lng);
+                        return (
+                            <g>
+                                <circle cx={p.x} cy={p.y} r="10" fill="none" stroke="#6366f1"
+                                    strokeWidth="2" className="fm-waypoint-pulse" />
+                                <circle cx={p.x} cy={p.y} r="4" fill="#818cf8" />
+                            </g>
+                        );
                     })()}
 
                     {/* User GPS dot */}
                     {userDot && (
                         <g>
-                            <circle cx={userDot.x} cy={userDot.y} r="9" fill="#6366f1" opacity="0.25" className="fm-user-ripple" />
-                            <circle cx={userDot.x} cy={userDot.y} r="5" fill="#818cf8" />
+                            <circle cx={userDot.x} cy={userDot.y} r="12" fill="#6366f1" opacity="0.2" className="fm-user-ripple" />
+                            <circle cx={userDot.x} cy={userDot.y} r="6" fill="#818cf8" stroke="white" strokeWidth="1.5" />
                             <circle cx={userDot.x} cy={userDot.y} r="2.5" fill="white" />
                         </g>
                     )}
 
                     {/* Destination pin */}
-                    {destNodeId && (() => {
-                        const d = nodeMap[destNodeId];
-                        if (!d || d.floor !== currentFloor) return null;
-                        const { x, y } = project(d.lat, d.lng);
-                        return <text x={x} y={y - 14} textAnchor="middle" fontSize="16">📍</text>;
+                    {adminDest && (() => {
+                        const p = project(adminDest.lat, adminDest.lng);
+                        return <text x={p.x} y={p.y - 16} textAnchor="middle" fontSize="18">📍</text>;
                     })()}
-
-                    {/* Staircase icons */}
-                    {floorNodes.filter(n => n.type === 'staircase').map(n => {
-                        const { x, y } = project(n.lat, n.lng);
-                        return <text key={n.id + '_sc'} x={x} y={y - 12} textAnchor="middle" fontSize="13">🪜</text>;
-                    })}
                 </svg>
             </div>
 
-            {/* Bottom CTA */}
-            {destNodeId && (
-                <div className="fm-cta-row">
-                    <div className="fm-dest-info">
-                        <span className="fm-dest-label">Navigating to</span>
-                        <span className="fm-dest-name">{nodeMap[destNodeId]?.name}</span>
+            {/* Bottom info + CTA */}
+            {(adminDest || destNodeId) && (
+                <div className="fm-bottom-panel">
+                    {/* Route info strip */}
+                    <div className="fm-route-info">
+                        <div className="fm-info-item">
+                            <span className="fm-info-label">Distance</span>
+                            <span className="fm-info-value">{distance !== null ? `${distance}m` : '--'}</span>
+                        </div>
+                        <div className="fm-info-item">
+                            <span className="fm-info-label">Next</span>
+                            <span className="fm-info-value fm-info-value--small">{nextDist !== null ? `${nextDist}m` : '--'}</span>
+                        </div>
+                        <div className="fm-info-item">
+                            <span className="fm-info-label">Waypoints</span>
+                            <span className="fm-info-value">{waypointIdx + 1}/{path.length}</span>
+                        </div>
                     </div>
-                    <button className="fm-ar-btn" onClick={() => navigate('ar')}>AR ↗</button>
-                    <button className="fm-cancel-btn" onClick={clearDestination}>✕</button>
+
+                    <div className="fm-cta-row">
+                        <div className="fm-dest-info">
+                            <span className="fm-dest-label">Navigating to</span>
+                            <span className="fm-dest-name">{destIcon} {destName}</span>
+                        </div>
+                        <button className="fm-ar-btn" onClick={() => navigate('ar')}>AR ↗</button>
+                        <button className="fm-cancel-btn" onClick={clearDestination}>✕</button>
+                    </div>
                 </div>
             )}
         </div>

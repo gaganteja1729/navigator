@@ -1,14 +1,17 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { nodes as campusNodes, nodeMap as campusNodeMap, selectableNodes } from '../data/campusData.js';
 import { haversineMetres, bearing } from '../utils/pathfinder.js';
 import { loadSegments, buildGraphFromSegments } from '../utils/walkablePaths.js';
 
 const NavCtx = createContext(null);
 
-/** Screens and their hierarchy:
- *  floor-select → home → map → ar
- *                       → admin
- */
+// ── localStorage key for admin-saved location coords ─────────
+const LOC_STORAGE_KEY = 'campus_loc_coords';
+
+function loadLocCoords() {
+    try { return JSON.parse(localStorage.getItem(LOC_STORAGE_KEY) || '{}'); }
+    catch { return {}; }
+}
 
 // ── A* on any graph ──────────────────────────────────────────
 function aStarOnGraph(startId, goalId, adjacency, nodeMap) {
@@ -42,23 +45,42 @@ function aStarOnGraph(startId, goalId, adjacency, nodeMap) {
 function nearestWalkableNode(lat, lng, floor, graphNodes) {
     let best = null, bestDist = Infinity;
     for (const n of graphNodes) {
-        if (n.floor !== floor) continue;
+        if (floor && n.floor !== floor) continue;
         const d = haversineMetres(lat, lng, n.lat, n.lng);
         if (d < bestDist) { bestDist = d; best = n; }
     }
     return best;
 }
 
-function snapDestToGraph(destNode, graphNodes) {
-    for (const n of graphNodes) {
-        if (n.label && destNode.name && n.label.includes(destNode.name.split('–')[0].trim())) return n;
+function nearestNodeOnPath(lat, lng, pathIds, nodeMap) {
+    let best = null, bestDist = Infinity;
+    for (const id of pathIds) {
+        const n = nodeMap[id];
+        if (!n) continue;
+        const d = haversineMetres(lat, lng, n.lat, n.lng);
+        if (d < bestDist) { bestDist = d; best = n; bestDist = d; }
     }
-    return nearestWalkableNode(destNode.lat, destNode.lng, destNode.floor, graphNodes);
+    return { node: best, dist: bestDist };
 }
+
+// ── Direction instruction from bearing change ─────────────────
+function getDirectionInstruction(prevBearing, currentBearing) {
+    let diff = ((currentBearing - prevBearing) + 360) % 360;
+    if (diff > 180) diff -= 360;
+    if (Math.abs(diff) < 20) return '⬆️ Go straight';
+    if (diff >= 20 && diff < 70) return '↗️ Slight right';
+    if (diff >= 70 && diff < 120) return '➡️ Turn right';
+    if (diff >= 120) return '↩️ Sharp right';
+    if (diff <= -20 && diff > -70) return '↖️ Slight left';
+    if (diff <= -70 && diff > -120) return '⬅️ Turn left';
+    if (diff <= -120) return '↩️ Sharp left';
+    return '⬆️ Go straight';
+}
+
+const OFF_TRACK_DIST = 15; // metres
 
 export function NavigationProvider({ children }) {
     // ── Screen history stack ──────────────────────────────────
-    // Screens: 'floor-select' | 'home' | 'map' | 'ar' | 'admin'
     const [screenStack, setScreenStack] = useState(['floor-select']);
     const currentScreen = screenStack[screenStack.length - 1];
 
@@ -75,7 +97,6 @@ export function NavigationProvider({ children }) {
 
     const selectFloor = useCallback((floor) => {
         setCurrentFloor(floor);
-        // Replace floor-select with home (don't allow back to floor-select from home)
         setScreenStack(['home']);
     }, []);
 
@@ -87,13 +108,7 @@ export function NavigationProvider({ children }) {
     const [gpsPos, setGpsPos] = useState(null);
     const [gpsError, setGpsError] = useState(null);
 
-
     useEffect(() => {
-
-
-
-
-
         if (!navigator.geolocation) { setGpsError('Geolocation not supported'); return; }
         const id = navigator.geolocation.watchPosition(
             pos => setGpsPos({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
@@ -114,6 +129,16 @@ export function NavigationProvider({ children }) {
         return () => window.removeEventListener('deviceorientation', handler, true);
     }, []);
 
+    // ── Admin-saved locations (from localStorage) ─────────────
+    const [adminLocations, setAdminLocations] = useState(() => loadLocCoords());
+
+    // Reload when returning to home screen (in case admin saved new locations)
+    useEffect(() => {
+        if (currentScreen === 'home') {
+            setAdminLocations(loadLocCoords());
+        }
+    }, [currentScreen]);
+
     // ── Walkable graph ────────────────────────────────────────
     const [segments, setSegments] = useState([]);
     const [walkGraph, setWalkGraph] = useState({ nodes: [], nodeMap: {}, adjacency: {} });
@@ -124,6 +149,15 @@ export function NavigationProvider({ children }) {
         setWalkGraph(buildGraphFromSegments(segs));
     }, []);
 
+    // Reload graph when returning to home (admin may have updated)
+    useEffect(() => {
+        if (currentScreen === 'home') {
+            const segs = loadSegments();
+            setSegments(segs);
+            setWalkGraph(buildGraphFromSegments(segs));
+        }
+    }, [currentScreen]);
+
     const refreshGraph = useCallback((segs) => {
         setSegments(segs);
         setWalkGraph(buildGraphFromSegments(segs));
@@ -131,54 +165,108 @@ export function NavigationProvider({ children }) {
 
     // ── Navigation ────────────────────────────────────────────
     const [destNodeId, setDestNodeId] = useState(null);
+    const [adminDest, setAdminDest] = useState(null);  // { name, lat, lng }
     const [path, setPath] = useState([]);
     const [waypointIdx, setWaypointIdx] = useState(0);
     const [arrived, setArrived] = useState(false);
+    const [isOffTrack, setIsOffTrack] = useState(false);
+    const [offTrackDist, setOffTrackDist] = useState(0);
+    const [directionInstruction, setDirectionInstruction] = useState('');
+    const prevBearingRef = useRef(null);
 
-    // Select destination → automatically navigate to map screen
-    const selectDestination = useCallback((nodeId) => {
-        setDestNodeId(nodeId);
+    // Select admin destination → navigate to map
+    const selectAdminDestination = useCallback((name, lat, lng) => {
+        setAdminDest({ name, lat, lng });
+        setDestNodeId(null);  // Clear old campus-node destination
         setArrived(false);
+        setIsOffTrack(false);
         navigate('map');
     }, [navigate]);
 
-    // Clear destination → go back
+    // Legacy: select campusData destination
+    const selectDestination = useCallback((nodeId) => {
+        setDestNodeId(nodeId);
+        setAdminDest(null);
+        setArrived(false);
+        setIsOffTrack(false);
+        navigate('map');
+    }, [navigate]);
+
     const clearDestination = useCallback(() => {
         setDestNodeId(null);
+        setAdminDest(null);
         setPath([]);
         setArrived(false);
+        setIsOffTrack(false);
+        setDirectionInstruction('');
+        prevBearingRef.current = null;
         goBack();
     }, [goBack]);
 
     // ── Compute A* path ────────────────────────────────────────
     useEffect(() => {
-        if (!destNodeId || !gpsPos || !currentFloor || walkGraph.nodes.length === 0) {
+        if (walkGraph.nodes.length === 0 || !gpsPos) {
             setPath([]); return;
         }
-        const destCampusNode = campusNodeMap[destNodeId];
-        if (!destCampusNode) return;
-        const startWN = nearestWalkableNode(gpsPos.lat, gpsPos.lng, currentFloor, walkGraph.nodes);
-        const destWN = snapDestToGraph(destCampusNode, walkGraph.nodes);
+
+        // Determine destination lat/lng
+        let destLat, destLng;
+        if (adminDest) {
+            destLat = adminDest.lat;
+            destLng = adminDest.lng;
+        } else if (destNodeId) {
+            const destCampusNode = campusNodeMap[destNodeId];
+            if (!destCampusNode) { setPath([]); return; }
+            destLat = destCampusNode.lat;
+            destLng = destCampusNode.lng;
+        } else {
+            setPath([]); return;
+        }
+
+        // Find nearest walkable nodes
+        const startWN = nearestWalkableNode(gpsPos.lat, gpsPos.lng, null, walkGraph.nodes);
+        const destWN = nearestWalkableNode(destLat, destLng, null, walkGraph.nodes);
         if (!startWN || !destWN) { setPath([]); return; }
+
         const result = aStarOnGraph(startWN.id, destWN.id, walkGraph.adjacency, walkGraph.nodeMap);
         setPath(result || []);
         setWaypointIdx(0);
         setArrived(false);
-    }, [destNodeId, gpsPos, currentFloor, walkGraph]);
+    }, [destNodeId, adminDest, gpsPos, walkGraph]);
 
-    // ── Advance waypoints ─────────────────────────────────────
+    // ── Advance waypoints + off-track + direction ──────────────
     useEffect(() => {
         if (!gpsPos || path.length === 0) return;
+
+        // Off-track detection
+        const { dist: nearestDist } = nearestNodeOnPath(gpsPos.lat, gpsPos.lng, path, walkGraph.nodeMap);
+        setIsOffTrack(nearestDist > OFF_TRACK_DIST);
+        setOffTrackDist(Math.round(nearestDist));
+
         const target = walkGraph.nodeMap[path[waypointIdx]];
         if (!target) return;
         const d = haversineMetres(gpsPos.lat, gpsPos.lng, target.lat, target.lng);
+
+        // Direction instruction
+        const currentBr = bearing(gpsPos.lat, gpsPos.lng, target.lat, target.lng);
+        if (prevBearingRef.current !== null) {
+            setDirectionInstruction(getDirectionInstruction(prevBearingRef.current, currentBr));
+        } else {
+            setDirectionInstruction('⬆️ Go straight');
+        }
+
         if (d < 5) {
+            // Vibrate on waypoint arrival
+            if (navigator.vibrate) navigator.vibrate(200);
+
             if (waypointIdx < path.length - 1) {
                 const nextNode = walkGraph.nodeMap[path[waypointIdx + 1]];
                 if (nextNode && nextNode.floor !== currentFloor) setCurrentFloor(nextNode.floor);
+                prevBearingRef.current = currentBr;
                 setWaypointIdx(w => w + 1);
             } else {
                 setArrived(true);
+                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,10 +282,27 @@ export function NavigationProvider({ children }) {
     }, [gpsPos, path, waypointIdx, walkGraph, compassHeading]);
 
     const distanceToDest = useCallback(() => {
-        if (!gpsPos || !destNodeId) return null;
-        const dest = campusNodeMap[destNodeId];
-        return dest ? Math.round(haversineMetres(gpsPos.lat, gpsPos.lng, dest.lat, dest.lng)) : null;
-    }, [gpsPos, destNodeId]);
+        if (!gpsPos) return null;
+        if (adminDest) {
+            return Math.round(haversineMetres(gpsPos.lat, gpsPos.lng, adminDest.lat, adminDest.lng));
+        }
+        if (destNodeId) {
+            const dest = campusNodeMap[destNodeId];
+            return dest ? Math.round(haversineMetres(gpsPos.lat, gpsPos.lng, dest.lat, dest.lng)) : null;
+        }
+        return null;
+    }, [gpsPos, destNodeId, adminDest]);
+
+    const distanceToNextWaypoint = useCallback(() => {
+        if (!gpsPos || path.length === 0) return null;
+        const target = walkGraph.nodeMap[path[waypointIdx]];
+        if (!target) return null;
+        return Math.round(haversineMetres(gpsPos.lat, gpsPos.lng, target.lat, target.lng));
+    }, [gpsPos, path, waypointIdx, walkGraph]);
+
+    // Current destination name (works for both admin and campus)
+    const destName = adminDest ? adminDest.name : (destNodeId ? campusNodeMap[destNodeId]?.name : null);
+    const destIcon = adminDest ? '📍' : (destNodeId ? campusNodeMap[destNodeId]?.icon : null);
 
     const value = {
         // Navigation
@@ -207,13 +312,21 @@ export function NavigationProvider({ children }) {
         currentFloor, selectFloor, changeFloor,
         // GPS
         gpsPos, gpsError,
-        // Destinations
+        // Destinations (legacy campus nodes)
         destNodeId, selectDestination, clearDestination, setArrived,
         nodeMap: campusNodeMap, selectableNodes,
+        // Admin destinations
+        adminDest, adminLocations, selectAdminDestination,
+        // Route info
+        destName, destIcon,
         // Path
         path, waypointIdx, arrived,
+        // Off-track
+        isOffTrack, offTrackDist,
+        // Direction
+        directionInstruction,
         // Compass / AR
-        compassHeading, arrowAngle, distanceToDest,
+        compassHeading, arrowAngle, distanceToDest, distanceToNextWaypoint,
         // Walkable graph
         walkGraph, segments, refreshGraph,
     };

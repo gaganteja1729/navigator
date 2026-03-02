@@ -2,23 +2,46 @@ import { useState } from 'react';
 import { useNav } from '../context/NavigationContext.jsx';
 import '../styles/HomeScreen.css';
 
+// ── Predefined campus locations (same list as admin) ──────────
+const CAMPUS_LOCATIONS = [
+    { name: 'Canteen', icon: '🍽️' },
+    { name: 'Main Gate', icon: '🚪' },
+    { name: 'Dot Net Lab', icon: '💻' },
+    { name: 'Main Block', icon: '🏫' },
+    { name: 'Drinking Water', icon: '💧' },
+    { name: 'Compute Block', icon: '🖥️' },
+    { name: 'CME 1st Year', icon: '📚' },
+    { name: 'CME 3rd Year', icon: '📚' },
+    { name: 'Playground', icon: '⚽' },
+];
+
 export default function HomeScreen() {
     const {
-        currentFloor, changeFloor,
-        selectDestination,
+        currentFloor,
         gpsPos, gpsError,
         navigate,
-        selectableNodes,
-        setCurrentFloor,   // for "Change floor" → back to floor-select
-        screenStack,
+        adminLocations,
+        selectAdminDestination,
     } = useNav();
 
     const [query, setQuery] = useState('');
-    const [showFloorRooms, setShowFloorRooms] = useState(currentFloor);
 
-    const filtered = selectableNodes
-        .filter(n => n.floor === showFloorRooms && n.type !== 'corridor')
-        .filter(n => n.name.toLowerCase().includes(query.toLowerCase()));
+    // Build destination list from admin-saved locations only
+    const savedLocations = CAMPUS_LOCATIONS
+        .filter(loc => adminLocations[loc.name])
+        .map(loc => ({
+            ...loc,
+            lat: adminLocations[loc.name].lat,
+            lng: adminLocations[loc.name].lng,
+        }));
+
+    const filtered = savedLocations.filter(loc =>
+        loc.name.toLowerCase().includes(query.toLowerCase())
+    );
+
+    const handleSelectLocation = (loc) => {
+        selectAdminDestination(loc.name, loc.lat, loc.lng);
+    };
 
     return (
         <div className="hs-root">
@@ -35,28 +58,13 @@ export default function HomeScreen() {
                         On: <strong>{currentFloor === 'ground' ? 'Ground Floor' : '1st Floor'}</strong>
                         <button
                             className="hs-switch-link"
-                            onClick={() => {
-                                // Push floor-select back onto stack so goBack works naturally
-                                navigate('floor-select');
-                            }}
+                            onClick={() => navigate('floor-select')}
                         >Change</button>
                     </p>
                     <button className="hs-admin-btn" onClick={() => navigate('admin')}>
                         🛠️ Admin
                     </button>
                 </div>
-            </div>
-
-            {/* Floor tab filter */}
-            <div className="hs-tabs">
-                <button
-                    className={`hs-tab ${showFloorRooms === 'ground' ? 'active' : ''}`}
-                    onClick={() => setShowFloorRooms('ground')}
-                >🏠 Ground</button>
-                <button
-                    className={`hs-tab ${showFloorRooms === 'first' ? 'active' : ''}`}
-                    onClick={() => setShowFloorRooms('first')}
-                >🏢 1st Floor</button>
             </div>
 
             {/* Search */}
@@ -83,25 +91,49 @@ export default function HomeScreen() {
 
             {/* Destination list */}
             <div className="hs-list">
-                {filtered.length === 0 && (
+                {savedLocations.length === 0 && !query && (
+                    <div className="hs-empty-state">
+                        <div className="hs-empty-icon">📌</div>
+                        <h3 className="hs-empty-title">No locations set up yet</h3>
+                        <p className="hs-empty-text">
+                            Go to <strong>Admin</strong> to save GPS coordinates for campus locations.
+                        </p>
+                        <button className="hs-empty-btn" onClick={() => navigate('admin')}>
+                            🛠️ Open Admin
+                        </button>
+                    </div>
+                )}
+
+                {savedLocations.length > 0 && filtered.length === 0 && query && (
                     <p className="hs-empty">No results for &ldquo;{query}&rdquo;</p>
                 )}
-                {filtered.map(node => (
-                    <button key={node.id} className="hs-dest-card" onClick={() => selectDestination(node.id)}>
-                        <span className="hs-dest-icon">{node.icon}</span>
+
+                {filtered.map(loc => (
+                    <button
+                        key={loc.name}
+                        className="hs-dest-card"
+                        onClick={() => handleSelectLocation(loc)}
+                    >
+                        <span className="hs-dest-icon">{loc.icon}</span>
                         <div className="hs-dest-info">
-                            <span className="hs-dest-name">{node.name}</span>
+                            <span className="hs-dest-name">{loc.name}</span>
                             <span className="hs-dest-type">
-                                {showFloorRooms === 'ground' ? 'Ground Floor' : '1st Floor'}
-                                {node.type === 'staircase' && ' · Staircase'}
-                                {node.type === 'lab' && ' · Lab'}
-                                {node.type === 'office' && ' · Office'}
+                                📍 GPS saved · Tap to navigate
                             </span>
                         </div>
                         <span className="hs-dest-arrow">›</span>
                     </button>
                 ))}
             </div>
+
+            {/* Quick stats footer */}
+            {savedLocations.length > 0 && (
+                <div className="hs-footer">
+                    <span className="hs-footer-stat">
+                        {savedLocations.length} location{savedLocations.length !== 1 ? 's' : ''} available
+                    </span>
+                </div>
+            )}
         </div>
     );
 }
