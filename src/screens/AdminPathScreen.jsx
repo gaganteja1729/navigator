@@ -341,6 +341,18 @@ export default function AdminPathScreen() {
         setStatus('All paths and saved location GPS cleared.');
     };
 
+    // ── Clear paths only (keep saved location GPS) ────────────────
+    const handleClearPathsOnly = () => {
+        if (!window.confirm('Delete ALL recorded paths on all floors?')) return;
+        saveSegments([]);
+        setSegments([]);
+        refreshGraph([]);
+        setDropMode(null);
+        setPendingStart(null);
+        setUndoStack([]);
+        setStatus('All paths cleared.');
+    };
+
     // ── Import JSON ──────────────────────────────────────────────
     const handleImport = (e) => {
         const file = e.target.files[0];
@@ -620,6 +632,9 @@ export default function AdminPathScreen() {
                 <div className="ap-actions">
                     <button className="ap-btn start" onClick={() => { setDropMode('needStart'); setPendingStart(null); setUndoStack([]); setStatus('Tap the map — or press "Drop Here" — to place the START point.'); }}>
                         ✏️ Draw Path
+                    </button>
+                    <button className="ap-btn clear-paths" onClick={handleClearPathsOnly} disabled={segments.length === 0}>
+                        🗑 Clear Paths
                     </button>
                 </div>
             ) : (

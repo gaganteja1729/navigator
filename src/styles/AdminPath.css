@@ -296,6 +296,17 @@
     flex: 0.55;
 }
 
+.ap-btn.clear-paths {
+    background: rgba(239, 68, 68, .15);
+    border: 1.5px solid rgba(239, 68, 68, .4);
+    color: #f87171;
+    flex: 0.65;
+}
+
+.ap-btn.clear-paths:hover:not(:disabled) {
+    background: rgba(239, 68, 68, .28);
+}
+
 /* ── Segment list ── */
 .ap-list-header {
     display: flex;
