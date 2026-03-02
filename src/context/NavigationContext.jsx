@@ -120,10 +120,13 @@ function snapToPath(lat, lng, pathIds, nodeMap) {
 const M_PER_LAT = 111320;
 const mPerLng = (lat) => 111320 * Math.cos((lat * Math.PI) / 180);
 
-// ── Direction instruction from bearing change ─────────────────
-function getDirectionInstruction(prevBearing, currentBearing) {
-    let diff = ((currentBearing - prevBearing) + 360) % 360;
-    if (diff > 180) diff -= 360;
+// ── Direction instruction: user heading vs bearing to next waypoint ──
+// userHeading = direction the user is physically facing (0–360°, 0=North)
+// bearingToWaypoint = compass bearing from user's position to next waypoint
+// diff > 0 → user needs to turn right; diff < 0 → turn left
+function getDirectionFromHeading(userHeading, bearingToWaypoint) {
+    let diff = (bearingToWaypoint - userHeading + 360) % 360;
+    if (diff > 180) diff -= 360; // normalise to −180 … +180
     if (Math.abs(diff) < 20) return '⬆️ Go straight';
     if (diff >= 20 && diff < 70) return '↗️ Slight right';
     if (diff >= 70 && diff < 120) return '➡️ Turn right';
@@ -281,7 +284,11 @@ export function NavigationProvider({ children }) {
     const [isOffTrack, setIsOffTrack] = useState(false);
     const [offTrackDist, setOffTrackDist] = useState(0);
     const [directionInstruction, setDirectionInstruction] = useState('');
-    const prevBearingRef = useRef(null);
+    // Ref so the snap/advance effect can read heading without re-subscribing
+    const stableHeadingRef = useRef(0);
+
+    // Keep stableHeadingRef in sync so the gpsPos effect can read latest heading
+    useEffect(() => { stableHeadingRef.current = stableHeading; }, [stableHeading]);
 
     // Snap-to-track state
     const [snappedPos, setSnappedPos] = useState(null);  // { lat, lng } on the route
@@ -380,13 +387,9 @@ export function NavigationProvider({ children }) {
         if (!target) return;
         const d = haversineMetres(effectiveLat, effectiveLng, target.lat, target.lng);
 
-        // Direction instruction
+        // Direction instruction: compare user's current travel heading to the route bearing
         const currentBr = bearing(effectiveLat, effectiveLng, target.lat, target.lng);
-        if (prevBearingRef.current !== null) {
-            setDirectionInstruction(getDirectionInstruction(prevBearingRef.current, currentBr));
-        } else {
-            setDirectionInstruction('⬆️ Go straight');
-        }
+        setDirectionInstruction(getDirectionFromHeading(stableHeadingRef.current, currentBr));
 
         if (d < 8) {
             // Vibrate on waypoint arrival
@@ -395,7 +398,6 @@ export function NavigationProvider({ children }) {
             if (waypointIdx < path.length - 1) {
                 const nextNode = walkGraph.nodeMap[path[waypointIdx + 1]];
                 if (nextNode && nextNode.floor !== currentFloor) setCurrentFloor(nextNode.floor);
-                prevBearingRef.current = currentBr;
                 setWaypointIdx(w => w + 1);
             } else {
                 setArrived(true);
