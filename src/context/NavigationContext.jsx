@@ -191,56 +191,48 @@ export function NavigationProvider({ children }) {
     const compassRef = useRef(0);
 
     useEffect(() => {
-
         const ALPHA = 0.15;
+        let gotAbsolute = false;  // true once a real absolute event fires
 
-        const applyHeading = (heading) => {
-
+        const applyHeading = (raw) => {
             const prev = compassRef.current;
-
-            let diff = heading - prev;
-
+            let diff = raw - prev;
             if (diff > 180) diff -= 360;
             if (diff < -180) diff += 360;
-
             const next = ((prev + ALPHA * diff) % 360 + 360) % 360;
-
             compassRef.current = next;
             setCompassHeading(next);
         };
 
-        const handleOrientation = (event) => {
+        // ── Absolute handler (Android Chrome deviceorientationabsolute) ──
+        // alpha = device counter-clockwise rotation from North → compass = 360 - alpha
+        const onAbsolute = (e) => {
+            if (e.alpha == null) return;
+            gotAbsolute = true;
+            applyHeading((360 - e.alpha + 360) % 360);
+        };
 
-            let heading;
+        // ── Relative handler (iOS Safari + Android fallback) ──
+        const onRelative = (e) => {
+            // If absolute events are available, ignore relative entirely
+            if (gotAbsolute) return;
 
-            // iOS Safari
-            if (event.webkitCompassHeading !== undefined) {
-                heading = event.webkitCompassHeading;
-            }
-
-            // Android Chrome
-            else if (event.absolute === true && event.alpha !== null) {
-                heading = event.alpha;
-            }
-
-            // fallback
-            else if (event.alpha !== null) {
-                heading = 360 - event.alpha;
-            }
-
-            if (heading !== undefined) {
-                applyHeading(heading);
+            if (e.webkitCompassHeading != null) {
+                // iOS Safari — webkitCompassHeading is always a true compass bearing
+                applyHeading(e.webkitCompassHeading);
+            } else if (e.alpha != null) {
+                // Last-resort fallback — may be relative, but better than nothing
+                applyHeading((360 - e.alpha + 360) % 360);
             }
         };
 
-        window.addEventListener("deviceorientationabsolute", handleOrientation, true);
-        window.addEventListener("deviceorientation", handleOrientation, true);
+        window.addEventListener('deviceorientationabsolute', onAbsolute, true);
+        window.addEventListener('deviceorientation', onRelative, true);
 
         return () => {
-            window.removeEventListener("deviceorientationabsolute", handleOrientation);
-            window.removeEventListener("deviceorientation", handleOrientation);
+            window.removeEventListener('deviceorientationabsolute', onAbsolute, true);
+            window.removeEventListener('deviceorientation', onRelative, true);
         };
-
     }, []);
     // ── Admin-saved locations (from localStorage) ─────────────
     const [adminLocations, setAdminLocations] = useState(() => loadLocCoords());
