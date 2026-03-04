@@ -1,3 +1,4 @@
+// dont know
 import { useEffect, useRef, useState } from 'react';
 import { useNav } from '../context/NavigationContext.jsx';
 import '../styles/ARView.css';
@@ -16,22 +17,14 @@ export default function ARView() {
         isOffTrack, offTrackDist,
         directionInstruction,
     } = useNav();
-
+    const fuck = null
     const videoRef = useRef(null);
     const [cameraError, setCameraError] = useState(null);
     const [cameraReady, setCameraReady] = useState(false);
     const [permAsked, setPermAsked] = useState(false);
     const [showMiniMap, setShowMiniMap] = useState(false);
 
-    // ── Raw sensor debug ────────────────────────────────────────
-    const [dbg, setDbg] = useState({ absCount: 0, relCount: 0, alpha: 'waiting...', webkit: '-', absolute: '-' });
-    useEffect(() => {
-        const onAbs = (e) => setDbg(d => ({ ...d, absCount: d.absCount + 1, alpha: e.alpha?.toFixed(1) ?? 'null', absolute: 'YES', webkit: e.webkitCompassHeading?.toFixed(1) ?? 'none' }));
-        const onRel = (e) => setDbg(d => ({ ...d, relCount: d.relCount + 1, alpha: e.alpha?.toFixed(1) ?? 'null', absolute: e.absolute ? 'yes' : 'NO', webkit: e.webkitCompassHeading?.toFixed(1) ?? 'none' }));
-        window.addEventListener('deviceorientationabsolute', onAbs, true);
-        window.addEventListener('deviceorientation', onRel, true);
-        return () => { window.removeEventListener('deviceorientationabsolute', onAbs, true); window.removeEventListener('deviceorientation', onRel, true); };
-    }, []);
+    // (debug state removed)
 
     const angle = arrowAngle();
     const distance = distanceToDest();
@@ -108,19 +101,6 @@ export default function ARView() {
                     <span>⚠️ Off route ({offTrackDist}m away) — rerouting…</span>
                 </div>
             )}
-
-            {/* ── COMPASS DEBUG PANEL — shows raw sensor data ── */}
-            <div style={{
-                position: 'absolute', bottom: 180, left: 10, right: 10,
-                background: 'rgba(0,0,0,0.82)', color: '#0f0', fontFamily: 'monospace',
-                fontSize: 11, padding: '8px 10px', borderRadius: 8, zIndex: 99,
-                lineHeight: 1.7, border: '1px solid #0f0',
-            }}>
-                <div>absEvents: <b>{dbg.absCount}</b> | relEvents: <b>{dbg.relCount}</b></div>
-                <div>alpha: <b>{dbg.alpha}</b> | absolute: <b>{dbg.absolute}</b></div>
-                <div>webkitCompassHdg: <b>{dbg.webkit}</b></div>
-                <div>compassHeading: <b>{Math.round(compassHeading)}°</b> | arrowAngle: <b>{Math.round(angle)}°</b></div>
-            </div>
 
             {/* Top HUD */}
             <div className="ar-hud-top">
@@ -223,3 +203,4 @@ export default function ARView() {
         </div>
     );
 }
+
