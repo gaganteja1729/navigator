@@ -393,7 +393,7 @@ export default function AdminPathScreen() {
                 <button className="ap-back" onClick={goBack}>‹ Back</button>
                 <h1 className="ap-title">🛠️ Path Recorder</h1>
                 <div className="ap-tools">
-                    <button className="ap-tool-btn" onClick={() => exportToJson(segments)} title="Export">⬇</button>
+                    <button className="ap-tool-btn" onClick={() => exportToJson()} title="Export">⬇</button>
                     <button className="ap-tool-btn" onClick={() => importRef.current.click()} title="Import">⬆</button>
                     <button className="ap-tool-btn danger" onClick={handleClearAll} title="Clear all">🗑</button>
                     <input ref={importRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
@@ -660,6 +660,23 @@ export default function AdminPathScreen() {
                     </div>
                 </>
             )}
+
+            {/* ── Download navData.json ── */}
+            <div style={{ padding: '8px 14px' }}>
+                <button
+                    style={{
+                        width: '100%', padding: '12px', borderRadius: 12,
+                        background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                        color: 'white', fontWeight: 700, fontSize: 14,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        boxShadow: '0 4px 14px rgba(99,102,241,.4)',
+                    }}
+                    onClick={() => exportToJson()}
+                >
+                    ⬇ Download navData.json
+                    <span style={{ fontWeight: 400, fontSize: 11, opacity: 0.8 }}>({segments.length} segments)</span>
+                </button>
+            </div>
 
             {/* ── Segment list ── */}
             <div className="ap-list-header" onClick={() => setShowList(v => !v)}>
