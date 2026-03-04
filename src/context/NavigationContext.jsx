@@ -168,11 +168,16 @@ export function NavigationProvider({ children }) {
     // ── GPS ───────────────────────────────────────────────────
     const [gpsPos, setGpsPos] = useState(null);
     const [gpsError, setGpsError] = useState(null);
+    const gpsPosRef = useRef(null);  // always up-to-date, does NOT trigger effects
 
     useEffect(() => {
         if (!navigator.geolocation) { setGpsError('Geolocation not supported'); return; }
         const id = navigator.geolocation.watchPosition(
-            pos => setGpsPos({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+            pos => {
+                const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+                gpsPosRef.current = p;
+                setGpsPos(p);
+            },
             err => setGpsError(err.message),
             { enableHighAccuracy: true, maximumAge: 2000 }
         );
@@ -185,57 +190,57 @@ export function NavigationProvider({ children }) {
     const [compassHeading, setCompassHeading] = useState(0);
     const compassRef = useRef(0);
 
-        useEffect(() => {
-        
+    useEffect(() => {
+
         const ALPHA = 0.15;
-        
+
         const applyHeading = (heading) => {
-        
+
             const prev = compassRef.current;
-        
+
             let diff = heading - prev;
-        
+
             if (diff > 180) diff -= 360;
             if (diff < -180) diff += 360;
-        
+
             const next = ((prev + ALPHA * diff) % 360 + 360) % 360;
-        
+
             compassRef.current = next;
             setCompassHeading(next);
         };
-    
+
         const handleOrientation = (event) => {
-        
+
             let heading;
-        
+
             // iOS Safari
             if (event.webkitCompassHeading !== undefined) {
                 heading = event.webkitCompassHeading;
             }
-        
+
             // Android Chrome
             else if (event.absolute === true && event.alpha !== null) {
                 heading = event.alpha;
             }
-        
+
             // fallback
             else if (event.alpha !== null) {
                 heading = 360 - event.alpha;
             }
-        
+
             if (heading !== undefined) {
                 applyHeading(heading);
             }
         };
-    
+
         window.addEventListener("deviceorientationabsolute", handleOrientation, true);
         window.addEventListener("deviceorientation", handleOrientation, true);
-    
+
         return () => {
             window.removeEventListener("deviceorientationabsolute", handleOrientation);
             window.removeEventListener("deviceorientation", handleOrientation);
         };
-    
+
     }, []);
     // ── Admin-saved locations (from localStorage) ─────────────
     const [adminLocations, setAdminLocations] = useState(() => loadLocCoords());
@@ -315,8 +320,13 @@ export function NavigationProvider({ children }) {
     }, [goBack]);
 
     // ── Compute A* path ────────────────────────────────────────
+    // NOTE: gpsPos is intentionally NOT in the dependency array.
+    // We read the latest GPS position via gpsPosRef so the path only
+    // recalculates when the destination or walkable graph changes —
+    // NOT on every GPS tick (which was causing waypointIdx to reset every second).
     useEffect(() => {
-        if (walkGraph.nodes.length === 0 || !gpsPos) {
+        const pos = gpsPosRef.current;
+        if (walkGraph.nodes.length === 0 || !pos) {
             setPath([]); return;
         }
 
@@ -335,7 +345,7 @@ export function NavigationProvider({ children }) {
         }
 
         // Find nearest walkable nodes
-        const startWN = nearestWalkableNode(gpsPos.lat, gpsPos.lng, null, walkGraph.nodes);
+        const startWN = nearestWalkableNode(pos.lat, pos.lng, null, walkGraph.nodes);
         const destWN = nearestWalkableNode(destLat, destLng, null, walkGraph.nodes);
         if (!startWN || !destWN) { setPath([]); return; }
 
@@ -343,7 +353,7 @@ export function NavigationProvider({ children }) {
         setPath(result || []);
         setWaypointIdx(0);
         setArrived(false);
-    }, [destNodeId, adminDest, gpsPos, walkGraph]);
+    }, [destNodeId, adminDest, walkGraph]);  // ← gpsPos removed on purpose
 
     // ── Snap to track + advance waypoints + direction ───────────
     useEffect(() => {
@@ -380,9 +390,8 @@ export function NavigationProvider({ children }) {
 
 
         if (d < 8) {
-            // Vibrate on waypoint arrival
-            if (navigator.vibrate) navigator.vibrate(200);
-
+            // Advanced past this waypoint
+            if (navigator.vibrate) navigator.vibrate(150);
             if (waypointIdx < path.length - 1) {
                 const nextNode = walkGraph.nodeMap[path[waypointIdx + 1]];
                 if (nextNode && nextNode.floor !== currentFloor) setCurrentFloor(nextNode.floor);
