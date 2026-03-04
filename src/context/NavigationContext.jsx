@@ -183,17 +183,14 @@ export function NavigationProvider({ children }) {
     const [compassHeading, setCompassHeading] = useState(0);
     const smoothedCompassRef = useRef(0);
     const [smoothedCompass, setSmoothedCompass] = useState(0);
+    const [compassReady, setCompassReady] = useState(false);  // true once we get a real absolute heading
 
     useEffect(() => {
-        const ALPHA = 0.15; // smoothing factor (lower = smoother, 0.1–0.2 works well)
+        const ALPHA = 0.15;
 
-        const handler = e => {
-            const raw = e.webkitCompassHeading != null
-                ? e.webkitCompassHeading
-                : (360 - (e.alpha || 0)) % 360;
-
+        const applyHeading = (raw) => {
             setCompassHeading(raw);
-
+            setCompassReady(true);
             // Circular low-pass filter (handles 0°/360° wraparound)
             const prev = smoothedCompassRef.current;
             let diff = raw - prev;
@@ -204,8 +201,39 @@ export function NavigationProvider({ children }) {
             setSmoothedCompass(next);
         };
 
-        window.addEventListener('deviceorientation', handler, true);
-        return () => window.removeEventListener('deviceorientation', handler, true);
+        // ── Strategy 1: deviceorientationabsolute (Android Chrome) ──
+        // This gives a true compass-calibrated heading on Android.
+        const absHandler = (e) => {
+            if (e.alpha == null) return;
+            applyHeading((360 - e.alpha + 360) % 360);
+        };
+
+        // ── Strategy 2: deviceorientation (iOS Safari via webkitCompassHeading) ──
+        // ONLY use webkitCompassHeading — do NOT fall back to e.alpha here,
+        // because on Android Chrome this event fires with relative (non-compass) alpha.
+        let absEventFired = false;
+        const relHandler = (e) => {
+            if (absEventFired) return; // absolute event is better, ignore relative
+            if (e.webkitCompassHeading != null) {
+                // iOS Safari — webkitCompassHeading is always an absolute compass heading
+                applyHeading(e.webkitCompassHeading);
+            } else if (e.absolute === true && e.alpha != null) {
+                // Some browsers set e.absolute=true on deviceorientation when calibrated
+                applyHeading((360 - e.alpha + 360) % 360);
+            }
+            // If neither condition is met, e.alpha is relative — skip it entirely.
+        };
+
+        window.addEventListener('deviceorientationabsolute', (e) => {
+            absEventFired = true;
+            absHandler(e);
+        }, true);
+        window.addEventListener('deviceorientation', relHandler, true);
+
+        return () => {
+            window.removeEventListener('deviceorientationabsolute', absHandler, true);
+            window.removeEventListener('deviceorientation', relHandler, true);
+        };
     }, []);
 
     // ── GPS-derived heading (from movement) ─────────────────
@@ -476,6 +504,7 @@ export function NavigationProvider({ children }) {
         directionInstruction,
         // Compass / AR
         compassHeading, smoothedCompass, stableHeading, gpsSpeed,
+        compassReady,
         arrowAngle, distanceToDest, distanceToNextWaypoint,
         // Walkable graph
         walkGraph, segments, refreshGraph,

@@ -9,7 +9,7 @@ export default function ARView() {
         path, waypointIdx,
         arrived, setArrived,
         clearDestination,
-        compassHeading, stableHeading, gpsSpeed,
+        compassHeading, stableHeading, gpsSpeed, compassReady,
         goBack, navigate,
         walkGraph,
         adminDest, destName, destIcon,
@@ -97,6 +97,13 @@ export default function ARView() {
             {isOffTrack && !arrived && (
                 <div className="ar-offtrack-banner">
                     <span>⚠️ Off route ({offTrackDist}m away) — rerouting…</span>
+                </div>
+            )}
+
+            {/* Compass not calibrated warning */}
+            {!compassReady && !arrived && cameraReady && (
+                <div className="ar-offtrack-banner" style={{ background: 'rgba(99,60,0,0.85)', top: isOffTrack ? '80px' : '56px' }}>
+                    <span>🧭 Waiting for compass… Point phone around to calibrate</span>
                 </div>
             )}
 
