@@ -1,7 +1,7 @@
 /**
  * Walkable Path Store
  * ─────────────────────────────────────────────────────────────
- * Segments are persisted in localStorage as JSON.
+ * Segments and admin location coordinates are persisted via server API.
  * Each segment = a straight walkable corridor/path the admin recorded.
  *
  * Shape of a segment:
@@ -13,36 +13,124 @@
  * }
  */
 
-const LS_KEY = 'campusWalkablePaths';
+const API_URL = '/api/nav-data';
+const LEGACY_SEGMENTS_KEY = 'campusWalkablePaths';
+const LEGACY_LOCATIONS_KEY = 'campus_loc_coords';
+
+let migrationChecked = false;
+
+function readLegacyData() {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return { segments: [], locationCoords: {} };
+    }
+
+    let segments = [];
+    let locationCoords = {};
+
+    try {
+        const rawSegments = window.localStorage.getItem(LEGACY_SEGMENTS_KEY);
+        if (rawSegments) {
+            const parsed = JSON.parse(rawSegments);
+            if (Array.isArray(parsed)) segments = parsed;
+        }
+    } catch (_) { }
+
+    try {
+        const rawLocs = window.localStorage.getItem(LEGACY_LOCATIONS_KEY);
+        if (rawLocs) {
+            const parsed = JSON.parse(rawLocs);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                locationCoords = parsed;
+            }
+        }
+    } catch (_) { }
+
+    return { segments, locationCoords };
+}
+
+async function getNavData() {
+    try {
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error('Failed to load nav data');
+        const data = await res.json();
+        const normalized = {
+            segments: Array.isArray(data?.segments) ? data.segments : [],
+            locationCoords: data?.locationCoords && typeof data.locationCoords === 'object' && !Array.isArray(data.locationCoords)
+                ? data.locationCoords
+                : {},
+        };
+
+        if (!migrationChecked) {
+            migrationChecked = true;
+            const serverEmpty = normalized.segments.length === 0 && Object.keys(normalized.locationCoords).length === 0;
+            if (serverEmpty) {
+                const legacy = readLegacyData();
+                const hasLegacy = legacy.segments.length > 0 || Object.keys(legacy.locationCoords).length > 0;
+                if (hasLegacy) {
+                    const migrated = await putNavData(legacy);
+                    return {
+                        segments: Array.isArray(migrated?.segments) ? migrated.segments : [],
+                        locationCoords: migrated?.locationCoords && typeof migrated.locationCoords === 'object' && !Array.isArray(migrated.locationCoords)
+                            ? migrated.locationCoords
+                            : {},
+                    };
+                }
+            }
+        }
+
+        return normalized;
+    } catch (_) {
+        return { segments: [], locationCoords: {} };
+    }
+}
+
+async function putNavData(data) {
+    const payload = {
+        segments: Array.isArray(data?.segments) ? data.segments : [],
+        locationCoords: data?.locationCoords && typeof data.locationCoords === 'object' && !Array.isArray(data.locationCoords)
+            ? data.locationCoords
+            : {},
+    };
+
+    const res = await fetch(API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to save nav data');
+    return res.json();
+}
 
 // ── Load / Save ────────────────────────────────────────────────
 
 export function loadSegments() {
-    try {
-        const raw = localStorage.getItem(LS_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) return parsed;
-        }
-    } catch (_) { }
-    return [];   // start empty — admin records the real paths
+    return getNavData().then(data => data.segments);
 }
 
 export function saveSegments(segments) {
-    localStorage.setItem(LS_KEY, JSON.stringify(segments));
+    return getNavData().then(data => putNavData({ ...data, segments })).then(saved => saved.segments);
 }
 
 export function addSegment(segment) {
-    const all = loadSegments();
-    const next = [...all, segment];
-    saveSegments(next);
-    return next;
+    return loadSegments().then(all => {
+        const next = [...all, segment];
+        return saveSegments(next);
+    });
 }
 
 export function deleteSegment(id) {
-    const next = loadSegments().filter(s => s.id !== id);
-    saveSegments(next);
-    return next;
+    return loadSegments().then(all => {
+        const next = all.filter(s => s.id !== id);
+        return saveSegments(next);
+    });
+}
+
+export function loadLocCoords() {
+    return getNavData().then(data => data.locationCoords);
+}
+
+export function saveLocCoords(locationCoords) {
+    return getNavData().then(data => putNavData({ ...data, locationCoords })).then(saved => saved.locationCoords);
 }
 
 export function exportToJson(segments) {
@@ -54,10 +142,10 @@ export function exportToJson(segments) {
     a.click(); URL.revokeObjectURL(url);
 }
 
-export function importFromJson(jsonText) {
+export async function importFromJson(jsonText) {
     const data = JSON.parse(jsonText);
     const segs = Array.isArray(data) ? data : (data.segments ?? []);
-    saveSegments(segs);
+    await saveSegments(segs);
     return segs;
 }
 

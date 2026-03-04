@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNav } from '../context/NavigationContext.jsx';
 import {
     loadSegments, saveSegments, addSegment,
-    deleteSegment, exportToJson, importFromJson,
+    deleteSegment, exportToJson, importFromJson, loadLocCoords, saveLocCoords,
 } from '../utils/walkablePaths.js';
 import '../styles/AdminPath.css';
 
@@ -19,17 +19,7 @@ const CAMPUS_LOCATIONS = [
     { name: 'Playground', lat: 17.38460, lng: 78.48620 },
 ];
 
-// ── localStorage helpers for saved location coords ────────────────
-const LOC_STORAGE_KEY = 'campus_loc_coords';
 
-function loadLocCoords() {
-    try { return JSON.parse(localStorage.getItem(LOC_STORAGE_KEY) || '{}'); }
-    catch { return {}; }
-}
-
-function saveLocCoords(map) {
-    localStorage.setItem(LOC_STORAGE_KEY, JSON.stringify(map));
-}
 
 
 
@@ -128,8 +118,8 @@ export default function AdminPathScreen() {
     const [mockLocation, setMockLocation] = useState(null);  // { name, lat, lng } | null
     const [showLocPicker, setShowLocPicker] = useState(false);
 
-    // Saved GPS overrides per location name (persisted in localStorage)
-    const [savedLocCoords, setSavedLocCoords] = useState(() => loadLocCoords());
+    // Saved GPS overrides per location name (persisted on server)
+    const [savedLocCoords, setSavedLocCoords] = useState({});
 
     // Effective GPS:
     //   1. If a campus location is selected AND it has saved GPS coords → use saved coords
@@ -155,7 +145,16 @@ export default function AdminPathScreen() {
     const proj = makeProjection(mapCenter.lat, mapCenter.lng);
 
     // ── Load segments on mount ───────────────────────────────────
-    useEffect(() => { setSegments(loadSegments()); }, []);
+    useEffect(() => {
+        let isActive = true;
+        (async () => {
+            const [segs, locs] = await Promise.all([loadSegments(), loadLocCoords()]);
+            if (!isActive) return;
+            setSegments(segs);
+            setSavedLocCoords(locs);
+        })();
+        return () => { isActive = false; };
+    }, []);
 
     const floorSegs = segments.filter(s => s.floor === floor);
 
@@ -186,11 +185,11 @@ export default function AdminPathScreen() {
     };
 
     // ── Save real GPS as selected location's coordinates ──────────
-    const handleSaveLocation = () => {
+    const handleSaveLocation = async () => {
         if (!mockLocation) return;
         if (!gpsPos) { setStatus('⚠️ Real GPS not available — move outside and try again.'); return; }
         const updated = { ...savedLocCoords, [mockLocation.name]: { lat: gpsPos.lat, lng: gpsPos.lng } };
-        saveLocCoords(updated);
+        await saveLocCoords(updated);
         setSavedLocCoords(updated);
         // Also update the pinned location coords instantly
         setMockLocation(prev => ({ ...prev, lat: gpsPos.lat, lng: gpsPos.lng }));
@@ -199,11 +198,11 @@ export default function AdminPathScreen() {
     };
 
     // ── Delete saved GPS for selected location ────────────────────
-    const handleDeleteLocationCoords = () => {
+    const handleDeleteLocationCoords = async () => {
         if (!mockLocation) return;
         const updated = { ...savedLocCoords };
         delete updated[mockLocation.name];
-        saveLocCoords(updated);
+        await saveLocCoords(updated);
         setSavedLocCoords(updated);
         // Revert pin to placeholder coords
         const base = CAMPUS_LOCATIONS.find(l => l.name === mockLocation.name);
@@ -244,7 +243,7 @@ export default function AdminPathScreen() {
     }, [dropMode, proj]);
 
     // ── Modal confirm ─────────────────────────────────────────────
-    const handleModalConfirm = (label) => {
+    const handleModalConfirm = async (label) => {
         if (modal.type === 'start') {
             const newStart = { lat: modal.lat, lng: modal.lng, x: modal.x, y: modal.y, label: label || 'Point' };
             // Push undo entry (no segment saved yet for start)
@@ -261,7 +260,7 @@ export default function AdminPathScreen() {
                 start: { lat: pendingStart.lat, lng: pendingStart.lng, label: pendingStart.label },
                 end: { lat: modal.lat, lng: modal.lng, label: label || 'Point' },
             };
-            const updated = addSegment(seg);
+            const updated = await addSegment(seg);
             setSegments(updated);
             refreshGraph(updated);
             // Push undo entry BEFORE updating pendingStart
@@ -284,7 +283,7 @@ export default function AdminPathScreen() {
     };
 
     // ── Undo last dropped point ───────────────────────────────────
-    const handleUndo = () => {
+    const handleUndo = async () => {
         if (undoStack.length === 0) {
             setStatus('Nothing to undo.');
             return;
@@ -294,7 +293,7 @@ export default function AdminPathScreen() {
 
         // Remove the saved segment if there was one
         if (prev.savedSegId) {
-            const updated = deleteSegment(prev.savedSegId);
+            const updated = await deleteSegment(prev.savedSegId);
             setSegments(updated);
             refreshGraph(updated);
         }
@@ -322,19 +321,19 @@ export default function AdminPathScreen() {
     };
 
     // ── Delete segment ───────────────────────────────────────────
-    const handleDelete = (id) => {
-        const updated = deleteSegment(id);
+    const handleDelete = async (id) => {
+        const updated = await deleteSegment(id);
         setSegments(updated);
         refreshGraph(updated);
     };
 
     // ── Clear all segments + saved location GPS ───────────────────
-    const handleClearAll = () => {
+    const handleClearAll = async () => {
         if (!window.confirm('Delete ALL recorded paths AND all saved location GPS coordinates?')) return;
-        saveSegments([]);
+        await saveSegments([]);
         setSegments([]);
         refreshGraph([]);
-        saveLocCoords({});
+        await saveLocCoords({});
         setSavedLocCoords({});
         setMockLocation(null);
         setShowLocPicker(false);
@@ -342,9 +341,9 @@ export default function AdminPathScreen() {
     };
 
     // ── Clear paths only (keep saved location GPS) ────────────────
-    const handleClearPathsOnly = () => {
+    const handleClearPathsOnly = async () => {
         if (!window.confirm('Delete ALL recorded paths on all floors?')) return;
-        saveSegments([]);
+        await saveSegments([]);
         setSegments([]);
         refreshGraph([]);
         setDropMode(null);
@@ -354,13 +353,13 @@ export default function AdminPathScreen() {
     };
 
     // ── Import JSON ──────────────────────────────────────────────
-    const handleImport = (e) => {
+    const handleImport = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = ev => {
+        reader.onload = async ev => {
             try {
-                const updated = importFromJson(ev.target.result);
+                const updated = await importFromJson(ev.target.result);
                 setSegments(updated);
                 refreshGraph(updated);
                 setStatus('✅ Paths imported!');

@@ -1,17 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { nodes as campusNodes, nodeMap as campusNodeMap, selectableNodes } from '../data/campusData.js';
 import { haversineMetres, bearing } from '../utils/pathfinder.js';
-import { loadSegments, buildGraphFromSegments } from '../utils/walkablePaths.js';
+import { loadSegments, loadLocCoords, buildGraphFromSegments } from '../utils/walkablePaths.js';
 
 const NavCtx = createContext(null);
-
-// ── localStorage key for admin-saved location coords ─────────
-const LOC_STORAGE_KEY = 'campus_loc_coords';
-
-function loadLocCoords() {
-    try { return JSON.parse(localStorage.getItem(LOC_STORAGE_KEY) || '{}'); }
-    catch { return {}; }
-}
 
 // ── A* on any graph ──────────────────────────────────────────
 function aStarOnGraph(startId, goalId, adjacency, nodeMap) {
@@ -234,33 +226,37 @@ export function NavigationProvider({ children }) {
             window.removeEventListener('deviceorientation', onRelative, true);
         };
     }, []);
-    // ── Admin-saved locations (from localStorage) ─────────────
-    const [adminLocations, setAdminLocations] = useState(() => loadLocCoords());
-
-    // Reload when returning to home screen (in case admin saved new locations)
-    useEffect(() => {
-        if (currentScreen === 'home') {
-            setAdminLocations(loadLocCoords());
-        }
-    }, [currentScreen]);
+    // ── Admin-saved locations (from server storage) ───────────
+    const [adminLocations, setAdminLocations] = useState({});
 
     // ── Walkable graph ────────────────────────────────────────
     const [segments, setSegments] = useState([]);
     const [walkGraph, setWalkGraph] = useState({ nodes: [], nodeMap: {}, adjacency: {} });
 
     useEffect(() => {
-        const segs = loadSegments();
-        setSegments(segs);
-        setWalkGraph(buildGraphFromSegments(segs));
+        let isActive = true;
+        (async () => {
+            const [segs, locs] = await Promise.all([loadSegments(), loadLocCoords()]);
+            if (!isActive) return;
+            setSegments(segs);
+            setWalkGraph(buildGraphFromSegments(segs));
+            setAdminLocations(locs);
+        })();
+        return () => { isActive = false; };
     }, []);
 
     // Reload graph when returning to home (admin may have updated)
     useEffect(() => {
-        if (currentScreen === 'home') {
-            const segs = loadSegments();
+        if (currentScreen !== 'home') return;
+        let isActive = true;
+        (async () => {
+            const [segs, locs] = await Promise.all([loadSegments(), loadLocCoords()]);
+            if (!isActive) return;
             setSegments(segs);
             setWalkGraph(buildGraphFromSegments(segs));
-        }
+            setAdminLocations(locs);
+        })();
+        return () => { isActive = false; };
     }, [currentScreen]);
 
     const refreshGraph = useCallback((segs) => {
