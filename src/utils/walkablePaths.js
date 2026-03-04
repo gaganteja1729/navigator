@@ -94,13 +94,17 @@ export const MERGE_DIST = 3; // metres — endpoints closer than this are the sa
 
 import { haversineMetres } from './pathfinder.js';
 
+export const STAIR_LINK_DIST = 15; // metres — stair nodes within this are linked cross-floor
+export const STAIR_WEIGHT = 50;    // equivalent metres for climbing a floor
+
 export function buildGraphFromSegments(segments) {
     const nodes = [];   // { id, lat, lng, floor, label }
     const edges = [];   // { from, to, weight, crossFloor? }
 
+    // Always match by SAME floor — no cross-floor merging here
     const findOrCreateNode = (lat, lng, floor, label = '') => {
         for (const n of nodes) {
-            if (n.floor === floor || (label.toLowerCase().includes('stair'))) {
+            if (n.floor === floor) {
                 const d = haversineMetres(lat, lng, n.lat, n.lng);
                 if (d < MERGE_DIST) return n.id;
             }
@@ -111,23 +115,34 @@ export function buildGraphFromSegments(segments) {
     };
 
     for (const seg of segments) {
-        const startFloor = seg.floor;
+        const startFloor = seg.floor ?? 'ground';
         const endFloor = seg.crossFloor ? (seg.toFloor ?? startFloor) : startFloor;
-
         const sId = findOrCreateNode(seg.start.lat, seg.start.lng, startFloor, seg.start.label ?? '');
         const eId = findOrCreateNode(seg.end.lat, seg.end.lng, endFloor, seg.end.label ?? '');
-
         if (sId === eId) continue;
-
         const w = haversineMetres(seg.start.lat, seg.start.lng, seg.end.lat, seg.end.lng);
         edges.push({ from: sId, to: eId, weight: Math.max(w, 1), crossFloor: !!seg.crossFloor });
         edges.push({ from: eId, to: sId, weight: Math.max(w, 1), crossFloor: !!seg.crossFloor });
     }
 
+    // ── Auto-link stair nodes across floors ──────────────────
+    const stairNodes = nodes.filter(n => n.label.toLowerCase().includes('stair'));
+    for (let i = 0; i < stairNodes.length; i++) {
+        for (let j = i + 1; j < stairNodes.length; j++) {
+            const a = stairNodes[i], b = stairNodes[j];
+            if (a.floor === b.floor) continue;  // must be different floors
+            const d = haversineMetres(a.lat, a.lng, b.lat, b.lng);
+            if (d > STAIR_LINK_DIST) continue;
+            // Link these stair nodes bidirectionally as cross-floor edges
+            edges.push({ from: a.id, to: b.id, weight: STAIR_WEIGHT, crossFloor: true });
+            edges.push({ from: b.id, to: a.id, weight: STAIR_WEIGHT, crossFloor: true });
+        }
+    }
+
     const adjacency = {};
     nodes.forEach(n => { adjacency[n.id] = []; });
-    edges.forEach(({ from, to, weight }) => {
-        adjacency[from].push({ id: to, weight });
+    edges.forEach(({ from, to, weight, crossFloor }) => {
+        adjacency[from].push({ id: to, weight, crossFloor: !!crossFloor });
     });
 
     const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
