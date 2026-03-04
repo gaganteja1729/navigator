@@ -1,88 +1,237 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import { useNav } from '../context/NavigationContext.jsx';
 import { haversineMetres } from '../utils/pathfinder.js';
 import '../styles/FloorMap.css';
 
-const W = 400, H = 480;
-const SPAN_M = 120; // metres across the view
+const W = 400, H = 500;
+const BASE_SPAN_M = 300; // 300m across = covers ~3 acres comfortably
+const MIN_ZOOM = 0.4, MAX_ZOOM = 12;
 const M_PER_LAT = 111320;
-const mPerLng = (lat) => 111320 * Math.cos((lat * Math.PI) / 180);
+const mPerLng = lat => 111320 * Math.cos(lat * Math.PI / 180);
 
-function makeProjection(centerLat, centerLng) {
-    const halfLatDeg = (SPAN_M / 2) / M_PER_LAT;
-    const halfLngDeg = (SPAN_M / 2) / mPerLng(centerLat);
-    const PAD = 30;
-    const usableW = W - PAD * 2;
-    const usableH = H - PAD * 2;
-
+function makeProjection(cLat, cLng) {
+    const hy = (BASE_SPAN_M / 2) / M_PER_LAT;
+    const hx = (BASE_SPAN_M / 2) / mPerLng(cLat);
     return (lat, lng) => ({
-        x: ((lng - (centerLng - halfLngDeg)) / (2 * halfLngDeg)) * usableW + PAD,
-        y: (((centerLat + halfLatDeg) - lat) / (2 * halfLatDeg)) * usableH + PAD,
+        x: ((lng - (cLng - hx)) / (2 * hx)) * W,
+        y: (((cLat + hy) - lat) / (2 * hy)) * H,
     });
 }
 
 export default function FloorMapView() {
     const {
-        path, waypointIdx,
-        destNodeId, clearDestination,
-        nodeMap, navigate,
-        gpsPos,
-        walkGraph, segments,
-        goBack,
-        adminDest, adminLocations,
-        destName, destIcon,
-        isOffTrack, offTrackDist,
-        distanceToDest, distanceToNextWaypoint,
-        directionInstruction,
-        snappedPos, guideLineTarget,
+        path, waypointIdx, destNodeId, clearDestination,
+        nodeMap, navigate, gpsPos, walkGraph, segments,
+        goBack, adminDest, adminLocations, destName, destIcon,
+        isOffTrack, offTrackDist, distanceToDest, distanceToNextWaypoint,
+        directionInstruction, snappedPos, guideLineTarget, compassHeading,
     } = useNav();
 
-    // Determine map center: admin dest → user GPS → default
+    // ── View state (zoom + pan) ───────────────────────────────
+    const [view, setView] = useState({ zoom: 1.2, panX: 0, panY: 0 });
+    const [popup, setPopup] = useState(null);   // { name, dist, dir, x, y }
+    const [followGps, setFollowGps] = useState(true);
+
+    const svgRef = useRef(null);
+    const pointers = useRef(new Map());          // active touch/mouse pointers
+    const lastPinchDist = useRef(null);
+    const dragStartRef = useRef(null);           // { clientX, clientY, panX, panY }
+    const didDrag = useRef(false);
+
+    // ── Map center — GPS or fallback ──────────────────────────
     const center = useMemo(() => {
-        if (adminDest) return { lat: adminDest.lat, lng: adminDest.lng };
         if (gpsPos) return { lat: gpsPos.lat, lng: gpsPos.lng };
-        return { lat: 17.38515, lng: 78.48665 };
-    }, [adminDest, gpsPos]);
+        if (adminDest) return { lat: adminDest.lat, lng: adminDest.lng };
+        return { lat: 16.9289, lng: 82.2305 };
+    }, [gpsPos?.lat, gpsPos?.lng, adminDest]);
 
-    const project = useMemo(() => makeProjection(center.lat, center.lng), [center]);
+    const project = useMemo(() => makeProjection(center.lat, center.lng), [center.lat, center.lng]);
 
-    // Draw all walkable segments
-    const segLines = useMemo(() => {
-        return segments.map(seg => {
-            const s = project(seg.start.lat, seg.start.lng);
-            const e = project(seg.end.lat, seg.end.lng);
-            return { id: seg.id, sx: s.x, sy: s.y, ex: e.x, ey: e.y };
-        });
-    }, [segments, project]);
-
-    // Admin location markers
-    const adminMarkers = useMemo(() => {
-        return Object.entries(adminLocations).map(([name, coords]) => {
-            const p = project(coords.lat, coords.lng);
-            const isDest = adminDest?.name === name;
-            return { name, ...p, isDest };
-        });
-    }, [adminLocations, project, adminDest]);
-
-    // Route path points
-    const pathPoints = useMemo(() => {
-        return path
-            .map(id => walkGraph.nodeMap[id])
-            .filter(Boolean)
-            .map(n => project(n.lat, n.lng));
-    }, [path, walkGraph, project]);
-
-    const pathStr = pathPoints.map(p => `${p.x},${p.y}`).join(' ');
+    // ── Follow GPS: keep user dot centered ───────────────────
     const userDot = useMemo(() => gpsPos ? project(gpsPos.lat, gpsPos.lng) : null, [gpsPos, project]);
     const snappedDot = useMemo(() => snappedPos ? project(snappedPos.lat, snappedPos.lng) : null, [snappedPos, project]);
-    const guideDot = useMemo(() => guideLineTarget ? project(guideLineTarget.lat, guideLineTarget.lng) : null, [guideLineTarget, project]);
-
-    // Which dot to show as the "user" — snapped if on-track, real GPS if off-track
     const displayDot = snappedDot || userDot;
+
+    useEffect(() => {
+        if (!followGps || !displayDot) return;
+        setView(v => ({
+            ...v,
+            panX: W / 2 - displayDot.x * v.zoom,
+            panY: H / 2 - displayDot.y * v.zoom,
+        }));
+    }, [displayDot?.x, displayDot?.y, followGps]);
+
+    // ── SVG coordinate helpers ────────────────────────────────
+    const clientToBase = useCallback((clientX, clientY) => {
+        const el = svgRef.current;
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        const sx = (clientX - rect.left) * (W / rect.width);
+        const sy = (clientY - rect.top) * (H / rect.height);
+        return {
+            x: (sx - view.panX) / view.zoom,
+            y: (sy - view.panY) / view.zoom,
+        };
+    }, [view]);
+
+    const baseToClient = useCallback((bx, by) => {
+        const el = svgRef.current;
+        if (!el) return { x: 0, y: 0 };
+        const rect = el.getBoundingClientRect();
+        return {
+            x: (view.panX + bx * view.zoom) * (rect.width / W) + rect.left,
+            y: (view.panY + by * view.zoom) * (rect.height / H) + rect.top,
+        };
+    }, [view]);
+
+    // ── Apply zoom toward a point ─────────────────────────────
+    const applyZoom = useCallback((factor, svgX, svgY) => {
+        setFollowGps(false);
+        setView(v => {
+            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v.zoom * factor));
+            const af = newZoom / v.zoom;
+            return { zoom: newZoom, panX: v.panX + (svgX - v.panX) * (1 - af), panY: v.panY + (svgY - v.panY) * (1 - af) };
+        });
+    }, []);
+
+    // ── Pointer events ────────────────────────────────────────
+    const onPointerDown = (e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        dragStartRef.current = { clientX: e.clientX, clientY: e.clientY, panX: view.panX, panY: view.panY };
+        didDrag.current = false;
+        if (pointers.current.size === 2) {
+            const pts = [...pointers.current.values()];
+            lastPinchDist.current = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+        }
+    };
+
+    const onPointerMove = (e) => {
+        if (!pointers.current.has(e.pointerId)) return;
+        const prev = pointers.current.get(e.pointerId);
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (Math.abs(e.clientX - dragStartRef.current?.clientX) > 4 ||
+            Math.abs(e.clientY - dragStartRef.current?.clientY) > 4) {
+            didDrag.current = true;
+            setFollowGps(false);
+        }
+
+        if (pointers.current.size === 2) {
+            const pts = [...pointers.current.values()];
+            const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+            if (lastPinchDist.current) {
+                const cx = (pts[0].x + pts[1].x) / 2;
+                const cy = (pts[0].y + pts[1].y) / 2;
+                const el = svgRef.current; const rect = el.getBoundingClientRect();
+                applyZoom(dist / lastPinchDist.current,
+                    (cx - rect.left) * (W / rect.width),
+                    (cy - rect.top) * (H / rect.height));
+            }
+            lastPinchDist.current = dist;
+        } else if (pointers.current.size === 1) {
+            const dx = e.clientX - prev.x;
+            const dy = e.clientY - prev.y;
+            const el = svgRef.current; const rect = el.getBoundingClientRect();
+            setView(v => ({ ...v, panX: v.panX + dx * (W / rect.width), panY: v.panY + dy * (H / rect.height) }));
+        }
+    };
+
+    const onPointerUp = (e) => {
+        const wasDrag = didDrag.current;
+        pointers.current.delete(e.pointerId);
+        lastPinchDist.current = null;
+        if (!wasDrag) handleTap(e.clientX, e.clientY);
+    };
+
+    const onWheel = (e) => {
+        e.preventDefault();
+        const el = svgRef.current; const rect = el.getBoundingClientRect();
+        applyZoom(e.deltaY < 0 ? 1.15 : 0.87,
+            (e.clientX - rect.left) * (W / rect.width),
+            (e.clientY - rect.top) * (H / rect.height));
+    };
+
+    // ── Tap → show popup ──────────────────────────────────────
+    const handleTap = (clientX, clientY) => {
+        const base = clientToBase(clientX, clientY);
+        if (!base) { setPopup(null); return; }
+        const THRESH = 20 / view.zoom; // screen pixels → base coords
+
+        // Check admin locations
+        for (const [name, coords] of Object.entries(adminLocations)) {
+            const p = project(coords.lat, coords.lng);
+            if (Math.hypot(p.x - base.x, p.y - base.y) < THRESH) {
+                const dist = gpsPos ? Math.round(haversineMetres(gpsPos.lat, gpsPos.lng, coords.lat, coords.lng)) : null;
+                const sc = baseToClient(p.x, p.y);
+                setPopup({ name, dist, x: sc.x, y: sc.y });
+                return;
+            }
+        }
+
+        // Check waypoints along route
+        for (let i = 0; i < path.length; i++) {
+            const n = walkGraph.nodeMap[path[i]];
+            if (!n) continue;
+            const p = project(n.lat, n.lng);
+            if (Math.hypot(p.x - base.x, p.y - base.y) < THRESH) {
+                const dist = gpsPos ? Math.round(haversineMetres(gpsPos.lat, gpsPos.lng, n.lat, n.lng)) : null;
+                const label = n.label || `Waypoint ${i + 1}`;
+                const isCurrent = i === waypointIdx;
+                const sc = baseToClient(p.x, p.y);
+                setPopup({ name: label, dist, isCurrent, waypointNum: i + 1, x: sc.x, y: sc.y });
+                return;
+            }
+        }
+        setPopup(null);
+    };
+
+    // ── Fit to route ─────────────────────────────────────────
+    const fitToRoute = () => {
+        if (path.length === 0) return;
+        const pts = path.map(id => walkGraph.nodeMap[id]).filter(Boolean).map(n => project(n.lat, n.lng));
+        if (pts.length === 0) return;
+        const minX = Math.min(...pts.map(p => p.x)), maxX = Math.max(...pts.map(p => p.x));
+        const minY = Math.min(...pts.map(p => p.y)), maxY = Math.max(...pts.map(p => p.y));
+        const rangeX = maxX - minX || 60, rangeY = maxY - minY || 60;
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(W / (rangeX + 80), H / (rangeY + 80))));
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        setView({ zoom: newZoom, panX: W / 2 - cx * newZoom, panY: H / 2 - cy * newZoom });
+        setFollowGps(false);
+    };
+
+    // ── Computed values ───────────────────────────────────────
+    const pathPts = useMemo(() => path.map(id => walkGraph.nodeMap[id]).filter(Boolean).map(n => project(n.lat, n.lng)), [path, walkGraph, project]);
+    const pathStr = pathPts.map(p => `${p.x},${p.y}`).join(' ');
+    const segLines = useMemo(() => segments.map(s => ({ id: s.id, s: project(s.start.lat, s.start.lng), e: project(s.end.lat, s.end.lng) })), [segments, project]);
+    const adminMarkers = useMemo(() => Object.entries(adminLocations).map(([name, c]) => ({ name, ...project(c.lat, c.lng), isDest: adminDest?.name === name })), [adminLocations, project, adminDest]);
+    const guideDot = useMemo(() => guideLineTarget ? project(guideLineTarget.lat, guideLineTarget.lng) : null, [guideLineTarget, project]);
 
     const distance = distanceToDest();
     const nextDist = distanceToNextWaypoint();
-    const nextNode = path[waypointIdx] ? walkGraph.nodeMap[path[waypointIdx]] : null;
+    const currentWpNode = walkGraph.nodeMap[path[waypointIdx]];
+
+    // ── Scale bar ─────────────────────────────────────────────
+    const mPerPx = BASE_SPAN_M / (W * view.zoom); // metres per base-coord pixel
+    const rawM = W * 0.25 * mPerPx;
+    const niceM = rawM >= 50 ? Math.round(rawM / 10) * 10 : rawM >= 10 ? Math.round(rawM / 5) * 5 : Math.round(rawM);
+    const scaleBarW = niceM / mPerPx; // in base coords
+
+    // ── Heading cone ─────────────────────────────────────────
+    const headingCone = useMemo(() => {
+        if (!displayDot || compassHeading == null) return null;
+        const rad = (compassHeading - 90) * Math.PI / 180;
+        const len = 28;
+        return {
+            x1: displayDot.x + Math.cos(rad - 0.3) * len,
+            y1: displayDot.y + Math.sin(rad - 0.3) * len,
+            x2: displayDot.x + Math.cos(rad + 0.3) * len,
+            y2: displayDot.y + Math.sin(rad + 0.3) * len,
+            tip: { x: displayDot.x + Math.cos(rad) * len * 1.3, y: displayDot.y + Math.sin(rad) * len * 1.3 },
+        };
+    }, [displayDot, compassHeading]);
+
+    const tx = `translate(${view.panX} ${view.panY}) scale(${view.zoom})`;
 
     return (
         <div className="fm-root">
@@ -93,170 +242,177 @@ export default function FloorMapView() {
                 <div style={{ width: 60 }} />
             </div>
 
-            {/* Off-track banner */}
+            {/* Direction banner */}
             {isOffTrack && (
                 <div className="fm-offtrack-banner">
                     <span className="fm-offtrack-icon">⚠️</span>
-                    <span>Off route ({offTrackDist}m away) — rerouting…</span>
+                    <span>Off route ({offTrackDist}m) — rerouting…</span>
                 </div>
             )}
-
-            {/* Direction instruction */}
             {directionInstruction && !isOffTrack && path.length > 0 && (
                 <div className="fm-direction-banner">
                     <span className="fm-direction-text">{directionInstruction}</span>
-                    {nextNode?.label && (
-                        <span className="fm-direction-target">toward {nextNode.label}</span>
-                    )}
+                    {currentWpNode?.label && <span className="fm-direction-target">toward {currentWpNode.label}</span>}
                 </div>
             )}
 
             {/* SVG Map */}
-            <div className="fm-map-wrap">
-                <svg viewBox={`0 0 ${W} ${H}`} className="fm-svg">
-                    {/* Background */}
-                    <rect x="0" y="0" width={W} height={H} fill="#09101e" rx="12" />
+            <div className="fm-map-wrap" style={{ position: 'relative' }}>
+                <svg
+                    ref={svgRef}
+                    viewBox={`0 0 ${W} ${H}`}
+                    className="fm-svg"
+                    style={{ touchAction: 'none', cursor: 'grab' }}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerUp}
+                    onWheel={onWheel}
+                >
+                    <rect width={W} height={H} fill="#09101e" />
 
-                    {/* Grid */}
-                    {Array.from({ length: 9 }).map((_, i) => {
-                        const x = 30 + (i + 1) * ((W - 60) / 10);
-                        const y = 30 + (i + 1) * ((H - 60) / 10);
-                        return (
-                            <g key={i} opacity="0.06">
-                                <line x1={x} y1={30} x2={x} y2={H - 30} stroke="#6366f1" strokeWidth="0.5" />
-                                <line x1={30} y1={y} x2={W - 30} y2={y} stroke="#6366f1" strokeWidth="0.5" />
-                            </g>
-                        );
-                    })}
+                    <g transform={tx}>
+                        {/* Grid (subtle) */}
+                        {Array.from({ length: 19 }).map((_, i) => {
+                            const v2 = W * (i + 1) / 20, h2 = H * (i + 1) / 20;
+                            return <g key={i} opacity="0.04"><line x1={v2} y1={0} x2={v2} y2={H} stroke="#6366f1" strokeWidth="0.5" /><line x1={0} y1={h2} x2={W} y2={h2} stroke="#6366f1" strokeWidth="0.5" /></g>;
+                        })}
 
-                    {/* Border */}
-                    <rect x="30" y="30" width={W - 60} height={H - 60}
-                        fill="none" stroke="#1e2540" strokeWidth="1.5" rx="6" />
+                        {/* Walkable segments */}
+                        {segLines.map(seg => (
+                            <line key={seg.id} x1={seg.s.x} y1={seg.s.y} x2={seg.e.x} y2={seg.e.y}
+                                stroke="#1e3060" strokeWidth={4 / view.zoom} strokeLinecap="round" />
+                        ))}
 
-                    {/* Compass */}
-                    <text x={W - 36} y={46} textAnchor="middle" fill="#6366f1" fontSize="11" fontWeight="bold">N</text>
-                    <line x1={W - 36} y1={50} x2={W - 36} y2={62} stroke="#6366f1" strokeWidth="1.5" />
+                        {/* Route path */}
+                        {pathStr && (
+                            <>
+                                {/* Shadow */}
+                                <polyline points={pathStr} fill="none" stroke="rgba(99,102,241,0.3)"
+                                    strokeWidth={10 / view.zoom} strokeLinecap="round" strokeLinejoin="round" />
+                                {/* Main line */}
+                                <polyline points={pathStr} fill="none" stroke="#6366f1"
+                                    strokeWidth={4 / view.zoom} strokeDasharray={`${10 / view.zoom} ${6 / view.zoom}`}
+                                    strokeLinecap="round" className="fm-route-line" />
+                            </>
+                        )}
 
-                    {/* Scale hint */}
-                    <text x={32} y={H - 18} fill="#334" fontSize="8" fontFamily="monospace">
-                        {SPAN_M}m span
-                    </text>
+                        {/* Waypoint nodes */}
+                        {pathPts.map((p, i) => {
+                            const isCurrent = i === waypointIdx;
+                            const isPassed = i < waypointIdx;
+                            const r = (isCurrent ? 9 : 5) / view.zoom;
+                            return (
+                                <g key={i}>
+                                    {isCurrent && <circle cx={p.x} cy={p.y} r={16 / view.zoom} fill="rgba(99,102,241,.15)" className="fm-waypoint-pulse" />}
+                                    <circle cx={p.x} cy={p.y} r={r} fill={isPassed ? '#334' : isCurrent ? '#818cf8' : '#4f6db5'} stroke={isCurrent ? 'white' : 'rgba(255,255,255,0.3)'} strokeWidth={1.5 / view.zoom} />
+                                    {view.zoom > 2.5 && walkGraph.nodeMap?.[path[i]]?.label && (
+                                        <text x={p.x} y={p.y - (r + 4)} textAnchor="middle" fill={isCurrent ? '#a5b4fc' : '#6b7db5'}
+                                            fontSize={9 / view.zoom} fontFamily="Inter" fontWeight={isCurrent ? 'bold' : 'normal'}>
+                                            {walkGraph.nodeMap[path[i]].label}
+                                        </text>
+                                    )}
+                                </g>
+                            );
+                        })}
 
-                    {/* ── Walkable path segments ── */}
-                    {segLines.map(seg => (
-                        <line key={seg.id}
-                            x1={seg.sx} y1={seg.sy} x2={seg.ex} y2={seg.ey}
-                            stroke="#1e2d4a" strokeWidth="2.5" strokeLinecap="round"
-                        />
-                    ))}
+                        {/* Admin location markers */}
+                        {adminMarkers.map(m => {
+                            const r = (m.isDest ? 9 : 6) / view.zoom;
+                            return (
+                                <g key={m.name}>
+                                    {m.isDest && <circle cx={m.x} cy={m.y} r={18 / view.zoom} fill="rgba(245,158,11,.15)" className="fm-dest-pulse" />}
+                                    <rect x={m.x - r} y={m.y - r} width={r * 2} height={r * 2}
+                                        fill={m.isDest ? '#f59e0b' : '#fb923c'} stroke={m.isDest ? 'white' : '#1a0a00'}
+                                        strokeWidth={1.5 / view.zoom} transform={`rotate(45 ${m.x} ${m.y})`} />
+                                    <text x={m.x} y={m.y - r - 5 / view.zoom} textAnchor="middle"
+                                        fill={m.isDest ? '#fde68a' : '#fed7aa'} fontSize={9 / view.zoom}
+                                        fontWeight={m.isDest ? 'bold' : 'normal'} fontFamily="Inter">
+                                        {m.name.length > 14 ? m.name.slice(0, 13) + '…' : m.name}
+                                    </text>
+                                </g>
+                            );
+                        })}
 
-                    {/* ── Route path ── */}
-                    {pathStr && (
-                        <polyline points={pathStr} fill="none" stroke="#6366f1"
-                            strokeWidth="4" strokeDasharray="8 5" strokeLinecap="round"
-                            className="fm-route-line" />
-                    )}
-
-                    {/* ── Admin location markers ── */}
-                    {adminMarkers.map(m => {
-                        const r = m.isDest ? 8 : 6;
-                        const pinColor = m.isDest ? '#f59e0b' : '#fb923c';
-                        const textColor = m.isDest ? '#fde68a' : '#fed7aa';
-                        const shortName = m.name.length > 12 ? m.name.slice(0, 11) + '…' : m.name;
-                        return (
-                            <g key={m.name}>
-                                {m.isDest && (
-                                    <circle cx={m.x} cy={m.y} r="14" fill="rgba(245,158,11,.15)" className="fm-dest-pulse" />
-                                )}
-                                <rect
-                                    x={m.x - r} y={m.y - r}
-                                    width={r * 2} height={r * 2}
-                                    fill={pinColor}
-                                    stroke={m.isDest ? 'white' : '#1a0a00'}
-                                    strokeWidth={m.isDest ? 1.5 : 1}
-                                    transform={`rotate(45 ${m.x} ${m.y})`}
-                                />
-                                <text
-                                    x={m.x} y={m.y - r - 6}
-                                    textAnchor="middle"
-                                    fill={textColor}
-                                    fontSize={m.isDest ? 9 : 7}
-                                    fontWeight={m.isDest ? 'bold' : 'normal'}
-                                    fontFamily="Inter"
-                                >
-                                    {shortName}
-                                </text>
-                            </g>
-                        );
-                    })}
-
-                    {/* Current waypoint pulse */}
-                    {(() => {
-                        const wn = walkGraph.nodeMap[path[waypointIdx]];
-                        if (!wn) return null;
-                        const p = project(wn.lat, wn.lng);
-                        return (
+                        {/* Guide line (off-track) */}
+                        {userDot && guideDot && isOffTrack && (
                             <g>
-                                <circle cx={p.x} cy={p.y} r="10" fill="none" stroke="#6366f1"
-                                    strokeWidth="2" className="fm-waypoint-pulse" />
-                                <circle cx={p.x} cy={p.y} r="4" fill="#818cf8" />
+                                <line x1={userDot.x} y1={userDot.y} x2={guideDot.x} y2={guideDot.y}
+                                    stroke="#f59e0b" strokeWidth={2 / view.zoom} strokeDasharray={`${5 / view.zoom} ${3 / view.zoom}`} />
+                                <circle cx={guideDot.x} cy={guideDot.y} r={4 / view.zoom} fill="#f59e0b" stroke="white" strokeWidth={1 / view.zoom} />
                             </g>
-                        );
-                    })()}
+                        )}
 
-                    {/* User GPS dot — snapped to track when close */}
-                    {displayDot && (
-                        <g>
-                            <circle cx={displayDot.x} cy={displayDot.y} r="12" fill="#6366f1" opacity="0.2" className="fm-user-ripple" />
-                            <circle cx={displayDot.x} cy={displayDot.y} r="6" fill="#818cf8" stroke="white" strokeWidth="1.5" />
-                            <circle cx={displayDot.x} cy={displayDot.y} r="2.5" fill="white" />
-                        </g>
-                    )}
-
-                    {/* Guide line from real GPS to nearest track point (when off-track) */}
-                    {userDot && guideDot && isOffTrack && (
-                        <g>
-                            <line
-                                x1={userDot.x} y1={userDot.y}
-                                x2={guideDot.x} y2={guideDot.y}
-                                stroke="#f59e0b" strokeWidth="2"
-                                strokeDasharray="4 3" strokeLinecap="round"
-                                opacity="0.8"
+                        {/* Heading cone */}
+                        {headingCone && displayDot && (
+                            <polygon
+                                points={`${displayDot.x},${displayDot.y} ${headingCone.x1},${headingCone.y1} ${headingCone.tip.x},${headingCone.tip.y} ${headingCone.x2},${headingCone.y2}`}
+                                fill="rgba(99,202,255,0.25)" stroke="rgba(99,202,255,0.6)" strokeWidth={0.8 / view.zoom}
                             />
-                            {/* Small real GPS dot (dimmer) */}
-                            <circle cx={userDot.x} cy={userDot.y} r="4" fill="#f59e0b" opacity="0.5" />
-                            {/* Track-snap target dot */}
-                            <circle cx={guideDot.x} cy={guideDot.y} r="4" fill="#f59e0b" stroke="white" strokeWidth="1" />
-                        </g>
-                    )}
+                        )}
 
-                    {/* Destination pin */}
-                    {adminDest && (() => {
-                        const p = project(adminDest.lat, adminDest.lng);
-                        return <text x={p.x} y={p.y - 16} textAnchor="middle" fontSize="18">📍</text>;
-                    })()}
+                        {/* GPS accuracy circle */}
+                        {displayDot && gpsPos?.accuracy && (
+                            <circle cx={displayDot.x} cy={displayDot.y}
+                                r={Math.min(gpsPos.accuracy / (BASE_SPAN_M / W), 60)}
+                                fill="rgba(129,140,248,0.06)" stroke="rgba(129,140,248,0.25)" strokeWidth={0.5 / view.zoom} />
+                        )}
+
+                        {/* User dot */}
+                        {displayDot && (
+                            <g>
+                                <circle cx={displayDot.x} cy={displayDot.y} r={14 / view.zoom} fill="#6366f1" opacity="0.15" className="fm-user-ripple" />
+                                <circle cx={displayDot.x} cy={displayDot.y} r={8 / view.zoom} fill="#818cf8" stroke="white" strokeWidth={2 / view.zoom} />
+                                <circle cx={displayDot.x} cy={displayDot.y} r={3 / view.zoom} fill="white" />
+                            </g>
+                        )}
+
+                        {/* Destination pin */}
+                        {adminDest && (() => { const p = project(adminDest.lat, adminDest.lng); return <text x={p.x} y={p.y - 16 / view.zoom} textAnchor="middle" fontSize={18 / view.zoom}>📍</text>; })()}
+
+                        {/* Scale bar */}
+                        <g transform={`translate(${(-view.panX + 16) / view.zoom}, ${(-view.panY + H - 24) / view.zoom})`}>
+                            <rect x={0} y={0} width={scaleBarW} height={3 / view.zoom} rx={1 / view.zoom} fill="#6366f1" opacity={0.8} />
+                            <text x={scaleBarW / 2} y={-4 / view.zoom} textAnchor="middle" fill="#a5b4fc" fontSize={8 / view.zoom} fontFamily="Inter">{niceM}m</text>
+                        </g>
+
+                        {/* North arrow */}
+                        <g transform={`translate(${(-view.panX + W - 24) / view.zoom}, ${(-view.panY + 28) / view.zoom})`}>
+                            <circle cx={0} cy={0} r={12 / view.zoom} fill="rgba(0,0,0,0.5)" stroke="#6366f1" strokeWidth={0.8 / view.zoom} />
+                            <text x={0} y={4 / view.zoom} textAnchor="middle" fill="#a5b4fc" fontSize={11 / view.zoom} fontWeight="bold" fontFamily="Inter">N</text>
+                        </g>
+                    </g>
                 </svg>
+
+                {/* Zoom controls */}
+                <div className="fm-zoom-panel">
+                    <button className="fm-zoom-btn" onClick={() => { setFollowGps(false); const c = W / 2; applyZoom(1.4, c, H / 2); }}>+</button>
+                    <button className="fm-zoom-btn" onClick={() => { setFollowGps(false); const c = W / 2; applyZoom(0.72, c, H / 2); }}>−</button>
+                    <button className="fm-zoom-btn" title="Fit route" onClick={fitToRoute}>⊞</button>
+                    <button className={`fm-zoom-btn ${followGps ? 'active' : ''}`} title="Follow GPS" onClick={() => setFollowGps(v => !v)}>◎</button>
+                </div>
+
+                {/* Tap popup */}
+                {popup && (
+                    <div className="fm-popup" style={{ left: popup.x, top: popup.y - 10 }}>
+                        <button className="fm-popup-close" onClick={() => setPopup(null)}>✕</button>
+                        <div className="fm-popup-name">{popup.name}</div>
+                        {popup.dist != null && <div className="fm-popup-dist">📍 {popup.dist}m away</div>}
+                        {popup.isCurrent && <div className="fm-popup-badge">⭐ Next waypoint</div>}
+                        {popup.waypointNum && <div className="fm-popup-sub">Waypoint {popup.waypointNum} of {path.length}</div>}
+                    </div>
+                )}
             </div>
 
             {/* Bottom info + CTA */}
             {(adminDest || destNodeId) && (
                 <div className="fm-bottom-panel">
-                    {/* Route info strip */}
                     <div className="fm-route-info">
-                        <div className="fm-info-item">
-                            <span className="fm-info-label">Distance</span>
-                            <span className="fm-info-value">{distance !== null ? `${distance}m` : '--'}</span>
-                        </div>
-                        <div className="fm-info-item">
-                            <span className="fm-info-label">Next</span>
-                            <span className="fm-info-value fm-info-value--small">{nextDist !== null ? `${nextDist}m` : '--'}</span>
-                        </div>
-                        <div className="fm-info-item">
-                            <span className="fm-info-label">Waypoints</span>
-                            <span className="fm-info-value">{waypointIdx + 1}/{path.length}</span>
-                        </div>
+                        <div className="fm-info-item"><span className="fm-info-label">Total</span><span className="fm-info-value">{distance != null ? `${distance}m` : '--'}</span></div>
+                        <div className="fm-info-item"><span className="fm-info-label">Next WP</span><span className="fm-info-value fm-info-value--small">{nextDist != null ? `${nextDist}m` : '--'}</span></div>
+                        <div className="fm-info-item"><span className="fm-info-label">Progress</span><span className="fm-info-value">{waypointIdx + 1}/{path.length}</span></div>
+                        <div className="fm-info-item"><span className="fm-info-label">Zoom</span><span className="fm-info-value">{view.zoom.toFixed(1)}×</span></div>
                     </div>
-
                     <div className="fm-cta-row">
                         <div className="fm-dest-info">
                             <span className="fm-dest-label">Navigating to</span>
