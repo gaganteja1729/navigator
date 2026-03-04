@@ -359,10 +359,12 @@ export default function AdminPathScreen() {
         const reader = new FileReader();
         reader.onload = async ev => {
             try {
-                const updated = await importFromJson(ev.target.result);
-                setSegments(updated);
-                refreshGraph(updated);
-                setStatus('✅ Paths imported!');
+                const segs = await importFromJson(ev.target.result);
+                const locs = await loadLocCoords();
+                setSegments(segs);
+                setSavedLocCoords(locs);
+                refreshGraph(segs);
+                setStatus('✅ Paths imported! Remember to also save navData.json via ⬇ Export to make it permanent.');
             } catch (_) {
                 setStatus('❌ Invalid JSON file.');
             }

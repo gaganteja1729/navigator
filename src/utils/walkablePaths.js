@@ -1,191 +1,102 @@
 /**
  * Walkable Path Store
  * ─────────────────────────────────────────────────────────────
- * Segments and admin location coordinates are persisted via server API.
- * Each segment = a straight walkable corridor/path the admin recorded.
+ * Data is stored in src/data/navData.json (bundled with the app).
  *
- * Shape of a segment:
+ * HOW TO SAVE:
+ *   1. In the Admin Path Recorder, use the ⬇ Export button after recording paths.
+ *   2. Replace src/data/navData.json with the downloaded file.
+ *   3. Redeploy / rebuild the app.
+ *
+ * Shape of navData.json:
  * {
- *   id:    string,   // unique id
- *   floor: 'ground' | 'first',
- *   start: { lat, lng, label? },
- *   end:   { lat, lng, label? },
+ *   segments: [{ id, floor, start: {lat,lng,label}, end: {lat,lng,label} }],
+ *   locationCoords: { "Place Name": { lat, lng }, ... }
  * }
  */
 
-const API_URL = '/api/nav-data';
-const LEGACY_SEGMENTS_KEY = 'campusWalkablePaths';
-const LEGACY_LOCATIONS_KEY = 'campus_loc_coords';
+import navData from '../data/navData.json';
 
-let migrationChecked = false;
+// ── In-memory store (loaded from bundled JSON) ─────────────────
+let _segments = Array.isArray(navData?.segments) ? navData.segments : [];
+let _locationCoords =
+    navData?.locationCoords && typeof navData.locationCoords === 'object' && !Array.isArray(navData.locationCoords)
+        ? navData.locationCoords
+        : {};
 
-function getApiCandidates() {
-    if (typeof window === 'undefined') return [API_URL];
-    const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-    return isLocalHost ? [API_URL, 'http://localhost:5000/api/nav-data'] : [API_URL];
-}
-
-async function fetchFromCandidates(init) {
-    const urls = getApiCandidates();
-    let lastError = null;
-
-    for (const url of urls) {
-        try {
-            const res = await fetch(url, init);
-            if (res.ok) return res;
-            if (res.status >= 500) {
-                lastError = new Error(`Server error: ${res.status}`);
-                continue;
-            }
-            lastError = new Error(`Request failed: ${res.status}`);
-            if (res.status === 404) continue;
-            throw lastError;
-        } catch (err) {
-            lastError = err;
-        }
-    }
-
-    throw (lastError ?? new Error('API request failed'));
-}
-
-function readLegacyData() {
-    if (typeof window === 'undefined' || !window.localStorage) {
-        return { segments: [], locationCoords: {} };
-    }
-
-    let segments = [];
-    let locationCoords = {};
-
-    try {
-        const rawSegments = window.localStorage.getItem(LEGACY_SEGMENTS_KEY);
-        if (rawSegments) {
-            const parsed = JSON.parse(rawSegments);
-            if (Array.isArray(parsed)) segments = parsed;
-        }
-    } catch (_) { }
-
-    try {
-        const rawLocs = window.localStorage.getItem(LEGACY_LOCATIONS_KEY);
-        if (rawLocs) {
-            const parsed = JSON.parse(rawLocs);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                locationCoords = parsed;
-            }
-        }
-    } catch (_) { }
-
-    return { segments, locationCoords };
-}
-
-async function getNavData() {
-    try {
-        const res = await fetchFromCandidates();
-        const data = await res.json();
-        const normalized = {
-            segments: Array.isArray(data?.segments) ? data.segments : [],
-            locationCoords: data?.locationCoords && typeof data.locationCoords === 'object' && !Array.isArray(data.locationCoords)
-                ? data.locationCoords
-                : {},
-        };
-
-        if (!migrationChecked) {
-            migrationChecked = true;
-            const serverEmpty = normalized.segments.length === 0 && Object.keys(normalized.locationCoords).length === 0;
-            if (serverEmpty) {
-                const legacy = readLegacyData();
-                const hasLegacy = legacy.segments.length > 0 || Object.keys(legacy.locationCoords).length > 0;
-                if (hasLegacy) {
-                    const migrated = await putNavData(legacy);
-                    return {
-                        segments: Array.isArray(migrated?.segments) ? migrated.segments : [],
-                        locationCoords: migrated?.locationCoords && typeof migrated.locationCoords === 'object' && !Array.isArray(migrated.locationCoords)
-                            ? migrated.locationCoords
-                            : {},
-                    };
-                }
-            }
-        }
-
-        return normalized;
-    } catch (_) {
-        return { segments: [], locationCoords: {} };
-    }
-}
-
-async function putNavData(data) {
-    const payload = {
-        segments: Array.isArray(data?.segments) ? data.segments : [],
-        locationCoords: data?.locationCoords && typeof data.locationCoords === 'object' && !Array.isArray(data.locationCoords)
-            ? data.locationCoords
-            : {},
-    };
-
-    const res = await fetchFromCandidates({
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    });
-    return res.json();
-}
-
-// ── Load / Save ────────────────────────────────────────────────
+// ── Load (just returns the in-memory copy) ─────────────────────
 
 export function loadSegments() {
-    return getNavData().then(data => data.segments);
-}
-
-export function saveSegments(segments) {
-    return getNavData().then(data => putNavData({ ...data, segments })).then(saved => saved.segments);
-}
-
-export function addSegment(segment) {
-    return loadSegments().then(all => {
-        const next = [...all, segment];
-        return saveSegments(next);
-    });
-}
-
-export function deleteSegment(id) {
-    return loadSegments().then(all => {
-        const next = all.filter(s => s.id !== id);
-        return saveSegments(next);
-    });
+    return Promise.resolve([..._segments]);
 }
 
 export function loadLocCoords() {
-    return getNavData().then(data => data.locationCoords);
+    return Promise.resolve({ ..._locationCoords });
+}
+
+// ── Mutate in-memory + trigger JSON download for persistence ───
+
+export function saveSegments(segments) {
+    _segments = Array.isArray(segments) ? segments : [];
+    return Promise.resolve([..._segments]);
 }
 
 export function saveLocCoords(locationCoords) {
-    return getNavData().then(data => putNavData({ ...data, locationCoords })).then(saved => saved.locationCoords);
+    _locationCoords =
+        locationCoords && typeof locationCoords === 'object' && !Array.isArray(locationCoords)
+            ? locationCoords
+            : {};
+    return Promise.resolve({ ..._locationCoords });
 }
 
+export function addSegment(segment) {
+    _segments = [..._segments, segment];
+    return Promise.resolve([..._segments]);
+}
+
+export function deleteSegment(id) {
+    _segments = _segments.filter(s => s.id !== id);
+    return Promise.resolve([..._segments]);
+}
+
+// ── Export current in-memory data as navData.json download ─────
 export function exportToJson(segments) {
-    const json = JSON.stringify({ segments }, null, 2);
+    const data = { segments: _segments, locationCoords: _locationCoords };
+    const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'campus_paths.json';
-    a.click(); URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = 'navData.json';
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
+// ── Import JSON file — load into memory ────────────────────────
 export async function importFromJson(jsonText) {
     const data = JSON.parse(jsonText);
-    const segs = Array.isArray(data) ? data : (data.segments ?? []);
-    await saveSegments(segs);
+    const segs = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.segments)
+            ? data.segments
+            : [];
+    const locs =
+        data?.locationCoords && typeof data.locationCoords === 'object' && !Array.isArray(data.locationCoords)
+            ? data.locationCoords
+            : {};
+    _segments = segs;
+    _locationCoords = locs;
     return segs;
 }
 
 // ── Build pathfinding graph from segments ──────────────────────
-// Merges nearby endpoints (within MERGE_DIST metres) into one node.
-
 export const MERGE_DIST = 3; // metres — endpoints closer than this are the same node
 
 import { haversineMetres } from './pathfinder.js';
 
 export function buildGraphFromSegments(segments) {
     const nodes = [];   // { id, lat, lng, floor, label }
-    const edges = [];   // { from, to, weight, crossFloor?, toFloor? }
+    const edges = [];   // { from, to, weight, crossFloor? }
 
     const findOrCreateNode = (lat, lng, floor, label = '') => {
         for (const n of nodes) {
@@ -206,14 +117,13 @@ export function buildGraphFromSegments(segments) {
         const sId = findOrCreateNode(seg.start.lat, seg.start.lng, startFloor, seg.start.label ?? '');
         const eId = findOrCreateNode(seg.end.lat, seg.end.lng, endFloor, seg.end.label ?? '');
 
-        if (sId === eId) continue; // degenerate segment
+        if (sId === eId) continue;
 
         const w = haversineMetres(seg.start.lat, seg.start.lng, seg.end.lat, seg.end.lng);
         edges.push({ from: sId, to: eId, weight: Math.max(w, 1), crossFloor: !!seg.crossFloor });
         edges.push({ from: eId, to: sId, weight: Math.max(w, 1), crossFloor: !!seg.crossFloor });
     }
 
-    // Build adjacency
     const adjacency = {};
     nodes.forEach(n => { adjacency[n.id] = []; });
     edges.forEach(({ from, to, weight }) => {
@@ -221,6 +131,5 @@ export function buildGraphFromSegments(segments) {
     });
 
     const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
-
     return { nodes, nodeMap, adjacency };
 }
