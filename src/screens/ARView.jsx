@@ -17,7 +17,7 @@ export default function ARView() {
         isOffTrack, offTrackDist,
         directionInstruction,
     } = useNav();
-    const fuck = null
+    const fuckoff = null
     const videoRef = useRef(null);
     const [cameraError, setCameraError] = useState(null);
     const [cameraReady, setCameraReady] = useState(false);
