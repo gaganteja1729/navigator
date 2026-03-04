@@ -143,7 +143,7 @@ export default function FloorMapView() {
             if (lastPinchAngle.current != null) {
                 const dAngle = angle - lastPinchAngle.current;
                 setHeadingUp(false);
-                setView(v => ({ ...v, rotation: (v.rotation + dAngle + 360) % 360 }));
+                setView(v => ({ ...v, rotation: (v.rotation - dAngle + 360) % 360 }));
             }
             lastPinchDist.current = dist;
             lastPinchAngle.current = angle;

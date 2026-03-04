@@ -173,16 +173,7 @@ export default function ARView() {
                 </div>
             )}
 
-            {/* AR Arrow */}
-            {cameraReady && !arrived && (
-                <div className="ar-arrow-wrap">
-                    <div className="ar-arrow" style={{ transform: `rotate(${angle}deg)` }}>
-                        <div className="ar-arrow-body" />
-                        <div className="ar-arrow-head" />
-                    </div>
-                </div>
-            )}
-
+            {/* (Old flat AR arrow removed here) */}
             {/* Mini-map toggle */}
             <button
                 className={`ar-minimap-toggle ${showMiniMap ? 'active' : ''}`}
