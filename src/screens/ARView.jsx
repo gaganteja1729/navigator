@@ -125,7 +125,7 @@ export default function ARView() {
             {/* AR Arrow */}
             {cameraReady && !arrived && (
                 <div className="ar-arrow-wrap">
-                    <div className="ar-arrow" style={{ transform: `rotate(${simHeading !== null ? simHeading : angle}deg)` }}>
+                    <div className="ar-arrow" style={{ transform: `rotate(${angle}deg)` }}>
                         <div className="ar-arrow-body" />
                         <div className="ar-arrow-head" />
                     </div>

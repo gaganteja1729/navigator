@@ -185,41 +185,58 @@ export function NavigationProvider({ children }) {
     const [compassHeading, setCompassHeading] = useState(0);
     const compassRef = useRef(0);
 
-    useEffect(() => {
-        const ALPHA = 0.2; // light smoothing — lower = smoother but more lag
-
-        const applyHeading = (raw) => {
-            // Circular low-pass filter (handles 0°/360° wraparound)
+        useEffect(() => {
+        
+        const ALPHA = 0.15;
+        
+        const applyHeading = (heading) => {
+        
             const prev = compassRef.current;
-            let diff = raw - prev;
+        
+            let diff = heading - prev;
+        
             if (diff > 180) diff -= 360;
             if (diff < -180) diff += 360;
+        
             const next = ((prev + ALPHA * diff) % 360 + 360) % 360;
+        
             compassRef.current = next;
             setCompassHeading(next);
         };
-
-        const onOrientation = (e) => {
-            if (e.webkitCompassHeading != null) {
-                // iOS Safari — direct compass bearing, always correct
-                applyHeading(e.webkitCompassHeading);
-            } else if (e.alpha != null) {
-                // Android — alpha is device rotation from north
-                applyHeading((360 - e.alpha) % 360);
+    
+        const handleOrientation = (event) => {
+        
+            let heading;
+        
+            // iOS Safari
+            if (event.webkitCompassHeading !== undefined) {
+                heading = event.webkitCompassHeading;
+            }
+        
+            // Android Chrome
+            else if (event.absolute === true && event.alpha !== null) {
+                heading = event.alpha;
+            }
+        
+            // fallback
+            else if (event.alpha !== null) {
+                heading = 360 - event.alpha;
+            }
+        
+            if (heading !== undefined) {
+                applyHeading(heading);
             }
         };
-
-        // Listen to both — deviceorientationabsolute is Android Chrome (calibrated),
-        // deviceorientation is the fallback (works on iOS + some Android)
-        window.addEventListener('deviceorientationabsolute', onOrientation, true);
-        window.addEventListener('deviceorientation', onOrientation, true);
-
+    
+        window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+        window.addEventListener("deviceorientation", handleOrientation, true);
+    
         return () => {
-            window.removeEventListener('deviceorientationabsolute', onOrientation, true);
-            window.removeEventListener('deviceorientation', onOrientation, true);
+            window.removeEventListener("deviceorientationabsolute", handleOrientation);
+            window.removeEventListener("deviceorientation", handleOrientation);
         };
+    
     }, []);
-
     // ── Admin-saved locations (from localStorage) ─────────────
     const [adminLocations, setAdminLocations] = useState(() => loadLocCoords());
 
