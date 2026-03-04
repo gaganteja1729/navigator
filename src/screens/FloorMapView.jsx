@@ -27,16 +27,24 @@ export default function FloorMapView() {
         directionInstruction, snappedPos, guideLineTarget, compassHeading,
     } = useNav();
 
-    // ── View state (zoom + pan) ───────────────────────────────
-    const [view, setView] = useState({ zoom: 1.2, panX: 0, panY: 0 });
-    const [popup, setPopup] = useState(null);   // { name, dist, dir, x, y }
+    // ── View state (zoom + pan + rotation) ──────────────────
+    const [view, setView] = useState({ zoom: 1.2, panX: 0, panY: 0, rotation: 0 });
+    const [popup, setPopup] = useState(null);
     const [followGps, setFollowGps] = useState(true);
+    const [headingUp, setHeadingUp] = useState(false);
 
     const svgRef = useRef(null);
-    const pointers = useRef(new Map());          // active touch/mouse pointers
+    const pointers = useRef(new Map());
     const lastPinchDist = useRef(null);
-    const dragStartRef = useRef(null);           // { clientX, clientY, panX, panY }
+    const lastPinchAngle = useRef(null);
+    const dragStartRef = useRef(null);
     const didDrag = useRef(false);
+
+    // ── Heading-up: auto-rotate map to compass heading ────────
+    useEffect(() => {
+        if (!headingUp) return;
+        setView(v => ({ ...v, rotation: compassHeading ?? 0 }));
+    }, [headingUp, compassHeading]);
 
     // ── Map center — GPS or fallback ──────────────────────────
     const center = useMemo(() => {
@@ -61,36 +69,44 @@ export default function FloorMapView() {
         }));
     }, [displayDot?.x, displayDot?.y, followGps]);
 
-    // ── SVG coordinate helpers ────────────────────────────────
+    // ── Coord helpers (account for rotation) ─────────────────
+    // Forward: base(bx,by) → SVG display(dx,dy)
+    //   a = bx*zoom, by*zoom
+    //   b = (a.x+panX-W/2, a.y+panY-H/2)
+    //   c = rotate(-R, b)
+    //   d = (c.x+W/2, c.y+H/2)
+    // Inverse:
     const clientToBase = useCallback((clientX, clientY) => {
-        const el = svgRef.current;
-        if (!el) return null;
+        const el = svgRef.current; if (!el) return null;
         const rect = el.getBoundingClientRect();
-        const sx = (clientX - rect.left) * (W / rect.width);
-        const sy = (clientY - rect.top) * (H / rect.height);
-        return {
-            x: (sx - view.panX) / view.zoom,
-            y: (sy - view.panY) / view.zoom,
-        };
+        const R = view.rotation * Math.PI / 180;
+        let x = (clientX - rect.left) * (W / rect.width) - W / 2;
+        let y = (clientY - rect.top) * (H / rect.height) - H / 2;
+        // undo rotate(-R) → rotate(+R)
+        const rx = x * Math.cos(R) - y * Math.sin(R);
+        const ry = x * Math.sin(R) + y * Math.cos(R);
+        // undo translate(-W/2+panX, -H/2+panY)
+        return { x: (rx + W / 2 - view.panX) / view.zoom, y: (ry + H / 2 - view.panY) / view.zoom };
     }, [view]);
 
     const baseToClient = useCallback((bx, by) => {
-        const el = svgRef.current;
-        if (!el) return { x: 0, y: 0 };
+        const el = svgRef.current; if (!el) return { x: 0, y: 0 };
         const rect = el.getBoundingClientRect();
-        return {
-            x: (view.panX + bx * view.zoom) * (rect.width / W) + rect.left,
-            y: (view.panY + by * view.zoom) * (rect.height / H) + rect.top,
-        };
+        const R = view.rotation * Math.PI / 180;
+        const ax = bx * view.zoom + view.panX - W / 2;
+        const ay = by * view.zoom + view.panY - H / 2;
+        const cx = ax * Math.cos(-R) - ay * Math.sin(-R) + W / 2;
+        const cy = ax * Math.sin(-R) + ay * Math.cos(-R) + H / 2;
+        return { x: cx * (rect.width / W) + rect.left, y: cy * (rect.height / H) + rect.top };
     }, [view]);
 
-    // ── Apply zoom toward a point ─────────────────────────────
+    // ── Apply zoom toward a SVG point ─────────────────────────
     const applyZoom = useCallback((factor, svgX, svgY) => {
         setFollowGps(false);
         setView(v => {
             const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v.zoom * factor));
             const af = newZoom / v.zoom;
-            return { zoom: newZoom, panX: v.panX + (svgX - v.panX) * (1 - af), panY: v.panY + (svgY - v.panY) * (1 - af) };
+            return { ...v, zoom: newZoom, panX: v.panX + (svgX - v.panX) * (1 - af), panY: v.panY + (svgY - v.panY) * (1 - af) };
         });
     }, []);
 
@@ -98,11 +114,12 @@ export default function FloorMapView() {
     const onPointerDown = (e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
         pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        dragStartRef.current = { clientX: e.clientX, clientY: e.clientY, panX: view.panX, panY: view.panY };
+        dragStartRef.current = { clientX: e.clientX, clientY: e.clientY };
         didDrag.current = false;
         if (pointers.current.size === 2) {
             const pts = [...pointers.current.values()];
             lastPinchDist.current = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+            lastPinchAngle.current = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180 / Math.PI;
         }
     };
 
@@ -110,30 +127,35 @@ export default function FloorMapView() {
         if (!pointers.current.has(e.pointerId)) return;
         const prev = pointers.current.get(e.pointerId);
         pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
         if (Math.abs(e.clientX - dragStartRef.current?.clientX) > 4 ||
             Math.abs(e.clientY - dragStartRef.current?.clientY) > 4) {
-            didDrag.current = true;
-            setFollowGps(false);
+            didDrag.current = true; setFollowGps(false);
         }
 
         if (pointers.current.size === 2) {
             const pts = [...pointers.current.values()];
             const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-            if (lastPinchDist.current) {
-                const cx = (pts[0].x + pts[1].x) / 2;
-                const cy = (pts[0].y + pts[1].y) / 2;
-                const el = svgRef.current; const rect = el.getBoundingClientRect();
-                applyZoom(dist / lastPinchDist.current,
-                    (cx - rect.left) * (W / rect.width),
-                    (cy - rect.top) * (H / rect.height));
+            const angle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180 / Math.PI;
+            const el = svgRef.current; const rect = el.getBoundingClientRect();
+            const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2;
+            if (lastPinchDist.current)
+                applyZoom(dist / lastPinchDist.current, (cx - rect.left) * (W / rect.width), (cy - rect.top) * (H / rect.height));
+            if (lastPinchAngle.current != null) {
+                const dAngle = angle - lastPinchAngle.current;
+                setHeadingUp(false);
+                setView(v => ({ ...v, rotation: (v.rotation + dAngle + 360) % 360 }));
             }
             lastPinchDist.current = dist;
+            lastPinchAngle.current = angle;
         } else if (pointers.current.size === 1) {
-            const dx = e.clientX - prev.x;
-            const dy = e.clientY - prev.y;
+            // Rotate pan delta to match map orientation
             const el = svgRef.current; const rect = el.getBoundingClientRect();
-            setView(v => ({ ...v, panX: v.panX + dx * (W / rect.width), panY: v.panY + dy * (H / rect.height) }));
+            const dsx = (e.clientX - prev.x) * (W / rect.width);
+            const dsy = (e.clientY - prev.y) * (H / rect.height);
+            const R = view.rotation * Math.PI / 180;
+            const dpx = dsx * Math.cos(R) + dsy * Math.sin(R);
+            const dpy = -dsx * Math.sin(R) + dsy * Math.cos(R);
+            setView(v => ({ ...v, panX: v.panX + dpx, panY: v.panY + dpy }));
         }
     };
 
@@ -231,7 +253,8 @@ export default function FloorMapView() {
         };
     }, [displayDot, compassHeading]);
 
-    const tx = `translate(${view.panX} ${view.panY}) scale(${view.zoom})`;
+    // Transform: rotate around SVG center, then pan+zoom in map space
+    const tx = `translate(${W / 2} ${H / 2}) rotate(${-view.rotation}) translate(${-W / 2 + view.panX} ${-H / 2 + view.panY}) scale(${view.zoom})`;
 
     return (
         <div className="fm-root">
@@ -370,27 +393,32 @@ export default function FloorMapView() {
                         {/* Destination pin */}
                         {adminDest && (() => { const p = project(adminDest.lat, adminDest.lng); return <text x={p.x} y={p.y - 16 / view.zoom} textAnchor="middle" fontSize={18 / view.zoom}>📍</text>; })()}
 
-                        {/* Scale bar */}
-                        <g transform={`translate(${(-view.panX + 16) / view.zoom}, ${(-view.panY + H - 24) / view.zoom})`}>
+                        {/* Scale bar — fixed to viewport via inverse transform */}
+                        <g transform={`translate(${W / 2} ${H / 2}) rotate(${view.rotation}) translate(${-W / 2} ${-H / 2}) translate(${(-view.panX + 16) / view.zoom} ${(-view.panY + H - 24) / view.zoom})`}>
                             <rect x={0} y={0} width={scaleBarW} height={3 / view.zoom} rx={1 / view.zoom} fill="#6366f1" opacity={0.8} />
                             <text x={scaleBarW / 2} y={-4 / view.zoom} textAnchor="middle" fill="#a5b4fc" fontSize={8 / view.zoom} fontFamily="Inter">{niceM}m</text>
-                        </g>
-
-                        {/* North arrow */}
-                        <g transform={`translate(${(-view.panX + W - 24) / view.zoom}, ${(-view.panY + 28) / view.zoom})`}>
-                            <circle cx={0} cy={0} r={12 / view.zoom} fill="rgba(0,0,0,0.5)" stroke="#6366f1" strokeWidth={0.8 / view.zoom} />
-                            <text x={0} y={4 / view.zoom} textAnchor="middle" fill="#a5b4fc" fontSize={11 / view.zoom} fontWeight="bold" fontFamily="Inter">N</text>
                         </g>
                     </g>
                 </svg>
 
                 {/* Zoom controls */}
                 <div className="fm-zoom-panel">
-                    <button className="fm-zoom-btn" onClick={() => { setFollowGps(false); const c = W / 2; applyZoom(1.4, c, H / 2); }}>+</button>
-                    <button className="fm-zoom-btn" onClick={() => { setFollowGps(false); const c = W / 2; applyZoom(0.72, c, H / 2); }}>−</button>
+                    <button className="fm-zoom-btn" onClick={() => { applyZoom(1.4, W / 2, H / 2); }}>+</button>
+                    <button className="fm-zoom-btn" onClick={() => { applyZoom(0.72, W / 2, H / 2); }}>−</button>
                     <button className="fm-zoom-btn" title="Fit route" onClick={fitToRoute}>⊞</button>
                     <button className={`fm-zoom-btn ${followGps ? 'active' : ''}`} title="Follow GPS" onClick={() => setFollowGps(v => !v)}>◎</button>
+                    <button className={`fm-zoom-btn ${headingUp ? 'active' : ''}`} title="Heading up" onClick={() => { setHeadingUp(v => !v); setFollowGps(true); }}>🧭</button>
                 </div>
+
+                {/* North compass — tap to snap to North, shows rotation */}
+                <button
+                    className="fm-north-compass"
+                    onClick={() => { setView(v => ({ ...v, rotation: 0 })); setHeadingUp(false); }}
+                    title="Tap to snap North to top"
+                >
+                    <span style={{ display: 'block', transform: `rotate(${-view.rotation}deg)`, transition: 'transform 0.3s', fontSize: 18, lineHeight: 1 }}>↑</span>
+                    <span style={{ fontSize: 9, color: '#6366f1', fontWeight: 700 }}>N</span>
+                </button>
 
                 {/* Tap popup */}
                 {popup && (

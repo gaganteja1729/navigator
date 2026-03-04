@@ -148,6 +148,33 @@
     color: #818cf8;
 }
 
+/* ── North compass button ── */
+.fm-north-compass {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(13, 17, 32, 0.88);
+    border: 1.5px solid rgba(99, 102, 241, .4);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
+    z-index: 10;
+    gap: 1px;
+    transition: border-color .2s;
+}
+
+.fm-north-compass:active {
+    background: rgba(99, 102, 241, .25);
+    border-color: rgba(99, 102, 241, .8);
+}
+
 /* ── Tap popup ── */
 .fm-popup {
     position: fixed;

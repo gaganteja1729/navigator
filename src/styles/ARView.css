@@ -165,7 +165,7 @@
     }
 }
 
-/* ──── AR ARROW ──── */
+/* ──── AR ARROW (3D SVG) ──── */
 .ar-arrow-wrap {
     position: absolute;
     top: 50%;
@@ -178,12 +178,23 @@
     z-index: 10;
 }
 
-.ar-arrow {
-    transition: transform 0.25s cubic-bezier(.34, 1.56, .64, 1);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    filter: drop-shadow(0 0 20px rgba(99, 102, 241, .7));
+@keyframes ar3dGlow {
+
+    0%,
+    100% {
+        opacity: 0.35;
+        transform: scaleX(1);
+    }
+
+    50% {
+        opacity: 0.65;
+        transform: scaleX(1.25);
+    }
+}
+
+.ar-3d-glow {
+    animation: ar3dGlow 1.8s ease-in-out infinite;
+    transform-origin: center;
 }
 
 .ar-arrow-head {

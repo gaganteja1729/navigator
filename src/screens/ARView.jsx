@@ -102,6 +102,56 @@ export default function ARView() {
                 </div>
             )}
 
+            {/* ── 3D Direction Arrow ── */}
+            {path.length > 0 && !arrived && (
+                <div className="ar-arrow-wrap">
+                    <svg
+                        width="90" height="130"
+                        viewBox="0 0 90 130"
+                        style={{ transform: `rotate(${angle}deg)`, transition: 'transform 0.25s cubic-bezier(.34,1.56,.64,1)', filter: 'drop-shadow(0 0 18px rgba(99,102,241,0.75))' }}
+                    >
+                        <defs>
+                            <linearGradient id="arFront" x1="0" y1="1" x2="0" y2="0">
+                                <stop offset="0" stopColor="#4338ca" />
+                                <stop offset="0.5" stopColor="#818cf8" />
+                                <stop offset="1" stopColor="#c7d2fe" />
+                            </linearGradient>
+                            <linearGradient id="arShaft" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0" stopColor="#4338ca" />
+                                <stop offset="0.4" stopColor="#6366f1" />
+                                <stop offset="1" stopColor="#3730a3" />
+                            </linearGradient>
+                        </defs>
+
+                        {/* Glow ring */}
+                        <ellipse cx="45" cy="120" rx="28" ry="6" fill="rgba(99,102,241,0.35)" className="ar-3d-glow" />
+
+                        {/* Shaft — right dark side */}
+                        <polygon points="55,120 60,120 60,62 55,62" fill="#1e1b4b" opacity="0.85" />
+                        {/* Shaft — front face */}
+                        <polygon points="32,120 55,120 55,62 32,62" fill="url(#arShaft)" />
+                        {/* Shaft top edge highlight */}
+                        <line x1="32" y1="62" x2="55" y2="62" stroke="rgba(199,210,254,0.5)" strokeWidth="1" />
+
+                        {/* Head — right dark side */}
+                        <polygon points="55,62 70,62 45,8 45,13" fill="#1e1b4b" opacity="0.8" />
+                        {/* Head — front face */}
+                        <polygon points="18,62 55,62 45,8" fill="url(#arFront)" />
+                        {/* Head left highlight edge */}
+                        <line x1="18" y1="62" x2="45" y2="8" stroke="rgba(199,210,254,0.4)" strokeWidth="1.5" />
+                        {/* Specular sheen */}
+                        <polygon points="22,62 45,12 45,8 18,62" fill="rgba(255,255,255,0.1)" />
+                    </svg>
+
+                    {directionInstruction && (
+                        <div className="ar-direction-banner">
+                            <span className="ar-direction-text">{directionInstruction}</span>
+                            {nextNode?.label && <span className="ar-direction-target">→ {nextNode.label}</span>}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Top HUD */}
             <div className="ar-hud-top">
                 <button className="ar-back" onClick={goBack}>‹ Map</button>
