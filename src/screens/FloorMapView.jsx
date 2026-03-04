@@ -25,6 +25,8 @@ export default function FloorMapView() {
         goBack, adminDest, adminLocations, destName, destIcon,
         isOffTrack, offTrackDist, distanceToDest, distanceToNextWaypoint,
         directionInstruction, snappedPos, guideLineTarget, compassHeading,
+        currentFloor, changeFloor,
+        crossFloorPending, pendingFloor, confirmFloorChange,
     } = useNav();
 
     // ── View state (zoom + pan + rotation) ──────────────────
@@ -225,7 +227,12 @@ export default function FloorMapView() {
     // ── Computed values ───────────────────────────────────────
     const pathPts = useMemo(() => path.map(id => walkGraph.nodeMap[id]).filter(Boolean).map(n => project(n.lat, n.lng)), [path, walkGraph, project]);
     const pathStr = pathPts.map(p => `${p.x},${p.y}`).join(' ');
-    const segLines = useMemo(() => segments.map(s => ({ id: s.id, s: project(s.start.lat, s.start.lng), e: project(s.end.lat, s.end.lng) })), [segments, project]);
+    const segLines = useMemo(() => segments.map(s => ({
+        id: s.id,
+        floor: s.floor ?? 'ground',
+        s: project(s.start.lat, s.start.lng),
+        e: project(s.end.lat, s.end.lng)
+    })), [segments, project]);
     const adminMarkers = useMemo(() => Object.entries(adminLocations).map(([name, c]) => ({ name, ...project(c.lat, c.lng), isDest: adminDest?.name === name })), [adminLocations, project, adminDest]);
     const guideDot = useMemo(() => guideLineTarget ? project(guideLineTarget.lat, guideLineTarget.lng) : null, [guideLineTarget, project]);
 
@@ -301,11 +308,29 @@ export default function FloorMapView() {
                             return <g key={i} opacity="0.04"><line x1={v2} y1={0} x2={v2} y2={H} stroke="#6366f1" strokeWidth="0.5" /><line x1={0} y1={h2} x2={W} y2={h2} stroke="#6366f1" strokeWidth="0.5" /></g>;
                         })}
 
-                        {/* Walkable segments */}
-                        {segLines.map(seg => (
-                            <line key={seg.id} x1={seg.s.x} y1={seg.s.y} x2={seg.e.x} y2={seg.e.y}
-                                stroke="#1e3060" strokeWidth={4 / view.zoom} strokeLinecap="round" />
-                        ))}
+                        {/* Walkable segments — coloured by floor */}
+                        {segLines.map(seg => {
+                            const isFirst = seg.floor === 'first';
+                            return (
+                                <line key={seg.id} x1={seg.s.x} y1={seg.s.y} x2={seg.e.x} y2={seg.e.y}
+                                    stroke={isFirst ? 'rgba(245,158,11,.35)' : 'rgba(99,102,241,.35)'}
+                                    strokeWidth={4 / view.zoom} strokeLinecap="round" />
+                            );
+                        })}
+
+                        {/* Stair node indicators */}
+                        {walkGraph.nodes.filter(n => n.label?.toLowerCase().includes('stair')).map(n => {
+                            const p = project(n.lat, n.lng);
+                            const r = 6 / view.zoom;
+                            return (
+                                <g key={n.id}>
+                                    <rect x={p.x - r} y={p.y - r} width={r * 2} height={r * 2}
+                                        fill="#f59e0b" stroke="white" strokeWidth={1 / view.zoom}
+                                        transform={`rotate(45 ${p.x} ${p.y})`} />
+                                    {view.zoom > 2 && <text x={p.x} y={p.y - r - 3 / view.zoom} textAnchor="middle" fill="#fbbf24" fontSize={7 / view.zoom} fontFamily="Inter">🪜</text>}
+                                </g>
+                            );
+                        })}
 
                         {/* Route path */}
                         {pathStr && (
@@ -408,7 +433,37 @@ export default function FloorMapView() {
                     <button className="fm-zoom-btn" title="Fit route" onClick={fitToRoute}>⊞</button>
                     <button className={`fm-zoom-btn ${followGps ? 'active' : ''}`} title="Follow GPS" onClick={() => setFollowGps(v => !v)}>◎</button>
                     <button className={`fm-zoom-btn ${headingUp ? 'active' : ''}`} title="Heading up" onClick={() => { setHeadingUp(v => !v); setFollowGps(true); }}>🧭</button>
+                    {/* Floor toggle */}
+                    <button className={`fm-zoom-btn`}
+                        title={`Currently: ${currentFloor === 'first' ? '1st Floor' : 'Ground Floor'} — tap to switch`}
+                        onClick={() => changeFloor(currentFloor === 'first' ? 'ground' : 'first')}
+                        style={{ fontSize: 11, fontWeight: 700, color: currentFloor === 'first' ? '#fbbf24' : '#818cf8' }}
+                    >
+                        {currentFloor === 'first' ? '1F' : 'GF'}
+                    </button>
                 </div>
+
+                {/* Cross-floor stair banner */}
+                {crossFloorPending && (
+                    <div style={{
+                        position: 'absolute', bottom: 90, left: 12, right: 12,
+                        background: 'rgba(245,158,11,.95)', borderRadius: 16, padding: '14px 18px',
+                        boxShadow: '0 8px 32px rgba(0,0,0,.5)', zIndex: 30,
+                        display: 'flex', flexDirection: 'column', gap: 10, backdropFilter: 'blur(12px)',
+                    }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: '#1a0a00' }}>
+                            🪜 {pendingFloor === 'first' ? 'Go upstairs now!' : 'Go downstairs now!'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'rgba(26,10,0,.7)' }}
+                        >Walk up the stairs, then tap the button below.</div>
+                        <button onClick={confirmFloorChange} style={{
+                            padding: '10px', borderRadius: 10, background: '#1a0a00',
+                            color: '#fbbf24', fontWeight: 700, fontSize: 13,
+                        }}>
+                            ✅ I'm on the {pendingFloor === 'first' ? '1st' : 'ground'} floor now
+                        </button>
+                    </div>
+                )}
 
                 {/* North compass — tap to snap to North, shows rotation */}
                 <button

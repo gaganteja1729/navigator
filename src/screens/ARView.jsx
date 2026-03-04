@@ -16,8 +16,10 @@ export default function ARView() {
         adminDest, destName, destIcon,
         isOffTrack, offTrackDist,
         directionInstruction,
+        crossFloorPending, pendingFloor, confirmFloorChange,
+        currentFloor, changeFloor,
     } = useNav();
-    const fuck = null
+    const simHeading = null;
     const videoRef = useRef(null);
     const [cameraError, setCameraError] = useState(null);
     const [cameraReady, setCameraReady] = useState(false);
@@ -90,6 +92,36 @@ export default function ARView() {
                         <p className="ar-arrived-sub">{destName}</p>
                         <button className="ar-arrived-btn" onClick={() => { clearDestination(); }}>
                             Back to Home
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Cross-floor staircase full-screen prompt */}
+            {crossFloorPending && !arrived && (
+                <div style={{
+                    position: 'absolute', inset: 0, zIndex: 50,
+                    background: 'rgba(9,16,30,0.92)', backdropFilter: 'blur(16px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                    <div style={{
+                        background: 'linear-gradient(135deg,#78350f,#b45309)',
+                        borderRadius: 24, padding: 32, margin: 24, textAlign: 'center',
+                        boxShadow: '0 16px 64px rgba(0,0,0,.6)',
+                    }}>
+                        <div style={{ fontSize: 52, marginBottom: 12 }}>🪜</div>
+                        <h2 style={{ color: 'white', fontWeight: 800, fontSize: 22, marginBottom: 8 }}>
+                            {pendingFloor === 'first' ? 'Go Upstairs!' : 'Go Downstairs!'}
+                        </h2>
+                        <p style={{ color: 'rgba(255,255,255,.75)', fontSize: 13, marginBottom: 20 }}>
+                            Walk to the staircase and climb {pendingFloor === 'first' ? 'up' : 'down'}.<br />Tap below when you reach the next floor.
+                        </p>
+                        <button onClick={confirmFloorChange} style={{
+                            background: 'white', color: '#78350f', fontWeight: 800,
+                            fontSize: 15, padding: '14px 28px', borderRadius: 14,
+                            boxShadow: '0 4px 16px rgba(0,0,0,.3)',
+                        }}>
+                            ✅ I'm on the {pendingFloor === 'first' ? '1st' : 'ground'} floor!
                         </button>
                     </div>
                 </div>
