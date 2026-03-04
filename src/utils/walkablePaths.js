@@ -19,6 +19,35 @@ const LEGACY_LOCATIONS_KEY = 'campus_loc_coords';
 
 let migrationChecked = false;
 
+function getApiCandidates() {
+    if (typeof window === 'undefined') return [API_URL];
+    const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    return isLocalHost ? [API_URL, 'http://localhost:5000/api/nav-data'] : [API_URL];
+}
+
+async function fetchFromCandidates(init) {
+    const urls = getApiCandidates();
+    let lastError = null;
+
+    for (const url of urls) {
+        try {
+            const res = await fetch(url, init);
+            if (res.ok) return res;
+            if (res.status >= 500) {
+                lastError = new Error(`Server error: ${res.status}`);
+                continue;
+            }
+            lastError = new Error(`Request failed: ${res.status}`);
+            if (res.status === 404) continue;
+            throw lastError;
+        } catch (err) {
+            lastError = err;
+        }
+    }
+
+    throw (lastError ?? new Error('API request failed'));
+}
+
 function readLegacyData() {
     if (typeof window === 'undefined' || !window.localStorage) {
         return { segments: [], locationCoords: {} };
@@ -50,8 +79,7 @@ function readLegacyData() {
 
 async function getNavData() {
     try {
-        const res = await fetch(API_URL);
-        if (!res.ok) throw new Error('Failed to load nav data');
+        const res = await fetchFromCandidates();
         const data = await res.json();
         const normalized = {
             segments: Array.isArray(data?.segments) ? data.segments : [],
@@ -92,12 +120,11 @@ async function putNavData(data) {
             : {},
     };
 
-    const res = await fetch(API_URL, {
+    const res = await fetchFromCandidates({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Failed to save nav data');
     return res.json();
 }
 
