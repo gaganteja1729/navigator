@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { nodes as campusNodes, nodeMap as campusNodeMap, selectableNodes } from '../data/campusData.js';
 import { haversineMetres, bearing } from '../utils/pathfinder.js';
 import { loadSegments, buildGraphFromSegments } from '../utils/walkablePaths.js';
@@ -179,95 +179,46 @@ export function NavigationProvider({ children }) {
         return () => navigator.geolocation.clearWatch(id);
     }, []);
 
-    // ── Compass (raw + smoothed) ─────────────────────────────
+    // ── Phone Compass (direct) ────────────────────────────────
+    // compassHeading = the direction the phone is physically pointing, in degrees
+    // (0 = North, 90 = East, 180 = South, 270 = West)
     const [compassHeading, setCompassHeading] = useState(0);
-    const smoothedCompassRef = useRef(0);
-    const [smoothedCompass, setSmoothedCompass] = useState(0);
-    const [compassReady, setCompassReady] = useState(false);  // true once we get a real absolute heading
+    const compassRef = useRef(0);
 
     useEffect(() => {
-        const ALPHA = 0.15;
+        const ALPHA = 0.2; // light smoothing — lower = smoother but more lag
 
         const applyHeading = (raw) => {
-            setCompassHeading(raw);
-            setCompassReady(true);
             // Circular low-pass filter (handles 0°/360° wraparound)
-            const prev = smoothedCompassRef.current;
+            const prev = compassRef.current;
             let diff = raw - prev;
             if (diff > 180) diff -= 360;
             if (diff < -180) diff += 360;
             const next = ((prev + ALPHA * diff) % 360 + 360) % 360;
-            smoothedCompassRef.current = next;
-            setSmoothedCompass(next);
+            compassRef.current = next;
+            setCompassHeading(next);
         };
 
-        // ── Strategy 1: deviceorientationabsolute (Android Chrome) ──
-        // This gives a true compass-calibrated heading on Android.
-        const absHandler = (e) => {
-            if (e.alpha == null) return;
-            applyHeading((360 - e.alpha + 360) % 360);
-        };
-
-        // ── Strategy 2: deviceorientation (iOS Safari via webkitCompassHeading) ──
-        // ONLY use webkitCompassHeading — do NOT fall back to e.alpha here,
-        // because on Android Chrome this event fires with relative (non-compass) alpha.
-        let absEventFired = false;
-        const relHandler = (e) => {
-            if (absEventFired) return; // absolute event is better, ignore relative
+        const onOrientation = (e) => {
             if (e.webkitCompassHeading != null) {
-                // iOS Safari — webkitCompassHeading is always an absolute compass heading
+                // iOS Safari — direct compass bearing, always correct
                 applyHeading(e.webkitCompassHeading);
-            } else if (e.absolute === true && e.alpha != null) {
-                // Some browsers set e.absolute=true on deviceorientation when calibrated
-                applyHeading((360 - e.alpha + 360) % 360);
+            } else if (e.alpha != null) {
+                // Android — alpha is device rotation from north
+                applyHeading((360 - e.alpha) % 360);
             }
-            // If neither condition is met, e.alpha is relative — skip it entirely.
         };
 
-        window.addEventListener('deviceorientationabsolute', (e) => {
-            absEventFired = true;
-            absHandler(e);
-        }, true);
-        window.addEventListener('deviceorientation', relHandler, true);
+        // Listen to both — deviceorientationabsolute is Android Chrome (calibrated),
+        // deviceorientation is the fallback (works on iOS + some Android)
+        window.addEventListener('deviceorientationabsolute', onOrientation, true);
+        window.addEventListener('deviceorientation', onOrientation, true);
 
         return () => {
-            window.removeEventListener('deviceorientationabsolute', absHandler, true);
-            window.removeEventListener('deviceorientation', relHandler, true);
+            window.removeEventListener('deviceorientationabsolute', onOrientation, true);
+            window.removeEventListener('deviceorientation', onOrientation, true);
         };
     }, []);
-
-    // ── GPS-derived heading (from movement) ─────────────────
-    const prevGpsPosRef = useRef(null);
-    const [gpsHeading, setGpsHeading] = useState(null);  // null if not moving
-    const [gpsSpeed, setGpsSpeed] = useState(0);         // m/s approximate
-
-    useEffect(() => {
-        if (!gpsPos) return;
-        const prev = prevGpsPosRef.current;
-        if (prev) {
-            const d = haversineMetres(prev.lat, prev.lng, gpsPos.lat, gpsPos.lng);
-            // Only compute heading if moved > 2m (avoids noise when stationary)
-            if (d > 2) {
-                const h = bearing(prev.lat, prev.lng, gpsPos.lat, gpsPos.lng);
-                setGpsHeading(h);
-                setGpsSpeed(d); // rough: d metres per GPS update interval
-            } else {
-                setGpsSpeed(0);
-            }
-        }
-        prevGpsPosRef.current = { lat: gpsPos.lat, lng: gpsPos.lng };
-    }, [gpsPos]);
-
-    // ── Stable hybrid heading ──────────────────────────────
-    // Uses GPS heading when walking (more stable), smoothed compass when still
-    const stableHeading = useMemo(() => {
-        if (gpsSpeed > 1.5 && gpsHeading !== null) {
-            // Moving: prefer GPS heading (very stable)
-            return gpsHeading;
-        }
-        // Stationary: use smoothed compass
-        return smoothedCompass;
-    }, [gpsHeading, gpsSpeed, smoothedCompass]);
 
     // ── Admin-saved locations (from localStorage) ─────────────
     const [adminLocations, setAdminLocations] = useState(() => loadLocCoords());
@@ -440,8 +391,8 @@ export function NavigationProvider({ children }) {
         const fromLat = snappedPos ? snappedPos.lat : gpsPos.lat;
         const fromLng = snappedPos ? snappedPos.lng : gpsPos.lng;
         const br = bearing(fromLat, fromLng, target.lat, target.lng);
-        setDirectionInstruction(getDirectionFromHeading(stableHeading, br));
-    }, [stableHeading, gpsPos, snappedPos, path, waypointIdx, walkGraph]);
+        setDirectionInstruction(getDirectionFromHeading(compassHeading, br));
+    }, [compassHeading, gpsPos, snappedPos, path, waypointIdx, walkGraph]);
 
     // ── AR values ─────────────────────────────────────────────
     const arrowAngle = useCallback(() => {
@@ -452,9 +403,9 @@ export function NavigationProvider({ children }) {
         const fromLat = snappedPos ? snappedPos.lat : gpsPos.lat;
         const fromLng = snappedPos ? snappedPos.lng : gpsPos.lng;
         const wb = bearing(fromLat, fromLng, target.lat, target.lng);
-        // Use stable hybrid heading instead of raw compass
-        return (wb - stableHeading + 360) % 360;
-    }, [gpsPos, snappedPos, path, waypointIdx, walkGraph, stableHeading]);
+        // Subtract phone heading so arrow rotates relative to where phone is pointing
+        return (wb - compassHeading + 360) % 360;
+    }, [gpsPos, snappedPos, path, waypointIdx, walkGraph, compassHeading]);
 
     const distanceToDest = useCallback(() => {
         if (!gpsPos) return null;
@@ -502,9 +453,8 @@ export function NavigationProvider({ children }) {
         isOffTrack, offTrackDist,
         // Direction
         directionInstruction,
-        // Compass / AR
-        compassHeading, smoothedCompass, stableHeading, gpsSpeed,
-        compassReady,
+        // Compass / AR — direct phone heading
+        compassHeading,
         arrowAngle, distanceToDest, distanceToNextWaypoint,
         // Walkable graph
         walkGraph, segments, refreshGraph,

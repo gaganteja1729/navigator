@@ -9,7 +9,7 @@ export default function ARView() {
         path, waypointIdx,
         arrived, setArrived,
         clearDestination,
-        compassHeading, stableHeading, gpsSpeed, compassReady,
+        compassHeading,
         goBack, navigate,
         walkGraph,
         adminDest, destName, destIcon,
@@ -100,12 +100,6 @@ export default function ARView() {
                 </div>
             )}
 
-            {/* Compass not calibrated warning */}
-            {!compassReady && !arrived && cameraReady && (
-                <div className="ar-offtrack-banner" style={{ background: 'rgba(99,60,0,0.85)', top: isOffTrack ? '80px' : '56px' }}>
-                    <span>🧭 Waiting for compass… Point phone around to calibrate</span>
-                </div>
-            )}
 
             {/* Top HUD */}
             <div className="ar-hud-top">
@@ -114,7 +108,7 @@ export default function ARView() {
                     <span>{destIcon} {destName}</span>
                 </div>
                 <div className="ar-compass">
-                    <div className="ar-compass-needle" style={{ transform: `rotate(${stableHeading}deg)` }}>↑</div>
+                    <div className="ar-compass-needle" style={{ transform: `rotate(${compassHeading}deg)` }}>↑</div>
                 </div>
             </div>
 
@@ -193,7 +187,7 @@ export default function ARView() {
                     </div>
                     <div className="ar-info-box">
                         <span className="ar-info-label">Heading</span>
-                        <span className="ar-info-val">{Math.round(stableHeading)}°</span>
+                        <span className="ar-info-val">{Math.round(compassHeading)}°</span>
                     </div>
                 </div>
                 {cameraError && (
