@@ -1,0 +1,266 @@
+{
+  "segments": [
+    {
+      "id": "seg-1772686236513",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9309077,
+        "lng": 82.2340613,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9309077,
+        "lng": 82.2340613,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686271380",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9309077,
+        "lng": 82.2340613,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9309077,
+        "lng": 82.2340613,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686301072",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9309077,
+        "lng": 82.2340613,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9309077,
+        "lng": 82.2340613,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686327013",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9309077,
+        "lng": 82.2340613,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9302669,
+        "lng": 82.2330895,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686369046",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9302669,
+        "lng": 82.2330895,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9302672,
+        "lng": 82.2330055,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686388718",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9302672,
+        "lng": 82.2330055,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9300234,
+        "lng": 82.2330278,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686418319",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9300234,
+        "lng": 82.2330278,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9300234,
+        "lng": 82.2330278,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686455922",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9300234,
+        "lng": 82.2330278,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 17.3854,
+        "lng": 78.4868,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686489685",
+      "floor": "ground",
+      "start": {
+        "lat": 17.3854,
+        "lng": 78.4868,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9298757,
+        "lng": 82.2324619,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686526717",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9298757,
+        "lng": 82.2324619,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9298757,
+        "lng": 82.2324619,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686543953",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9298757,
+        "lng": 82.2324619,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9298757,
+        "lng": 82.2324619,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686566666",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9298757,
+        "lng": 82.2324619,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9304151,
+        "lng": 82.2324961,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686592821",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9304151,
+        "lng": 82.2324961,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9304151,
+        "lng": 82.2324961,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772686622330",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9304151,
+        "lng": 82.2324961,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9304151,
+        "lng": 82.2324961,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772708011275",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9309334,
+        "lng": 82.2322054,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9309334,
+        "lng": 82.2322054,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772708021497",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9309334,
+        "lng": 82.2322054,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9309334,
+        "lng": 82.2322054,
+        "label": "Point"
+      }
+    }
+  ],
+  "locationCoords": {
+    "Main Gate": {
+      "lat": 16.9309077,
+      "lng": 82.2340613
+    },
+    "Main Block": {
+      "lat": 16.9302669,
+      "lng": 82.2330895
+    },
+    "Drinking Water": {
+      "lat": 16.9302672,
+      "lng": 82.2330055
+    },
+    "Dot Net Lab": {
+      "lat": 16.9300234,
+      "lng": 82.2330278
+    },
+    "Compute Block": {
+      "lat": 16.9298757,
+      "lng": 82.2324619
+    },
+    "Administrative Block": {
+      "lat": 16.9304151,
+      "lng": 82.2324961
+    },
+    "Auditorium": {
+      "lat": 16.9308086,
+      "lng": 82.2321107
+    },
+    "CME 1st Year": {
+      "lat": 16.9309334,
+      "lng": 82.2322054
+    },
+    "CME 3rd Year": {
+      "lat": 16.9309816,
+      "lng": 82.2320936
+    }
+  }
+}
