@@ -112,22 +112,6 @@ function snapToPath(lat, lng, pathIds, nodeMap) {
 const M_PER_LAT = 111320;
 const mPerLng = (lat) => 111320 * Math.cos((lat * Math.PI) / 180);
 
-// ── Direction instruction: user heading vs bearing to next waypoint ──
-// userHeading = direction the user is physically facing (0–360°, 0=North)
-// bearingToWaypoint = compass bearing from user's position to next waypoint
-// diff > 0 → user needs to turn right; diff < 0 → turn left
-function getDirectionFromHeading(userHeading, bearingToWaypoint) {
-    let diff = (bearingToWaypoint - userHeading + 360) % 360;
-    if (diff > 180) diff -= 360; // normalise to −180 … +180
-    if (Math.abs(diff) < 20) return '⬆️ Go straight';
-    if (diff >= 20 && diff < 70) return '↗️ Slight right';
-    if (diff >= 70 && diff < 120) return '➡️ Turn right';
-    if (diff >= 120) return '↩️ Sharp right';
-    if (diff <= -20 && diff > -70) return '↖️ Slight left';
-    if (diff <= -70 && diff > -120) return '⬅️ Turn left';
-    if (diff <= -120) return '↩️ Sharp left';
-    return '⬆️ Go straight';
-}
 
 const SNAP_DIST = 30;     // metres — snap to track if within this
 const OFF_TRACK_DIST = 30; // metres — show off-track warning beyond this
@@ -272,7 +256,6 @@ export function NavigationProvider({ children }) {
     const [arrived, setArrived] = useState(false);
     const [isOffTrack, setIsOffTrack] = useState(false);
     const [offTrackDist, setOffTrackDist] = useState(0);
-    const [directionInstruction, setDirectionInstruction] = useState('');
 
     // Snap-to-track state
     const [snappedPos, setSnappedPos] = useState(null);  // { lat, lng } on the route
@@ -414,40 +397,6 @@ export function NavigationProvider({ children }) {
         }
     }, [gpsPos]);
 
-    // ── Direction instruction (live — updates on compass AND GPS changes) ──
-    // This mirrors Google Maps: the "turn left/right" banner refreshes every time
-    // the user rotates their phone, not just when GPS ticks.
-    useEffect(() => {
-        if (!gpsPos || path.length === 0) {
-            setDirectionInstruction('');
-            return;
-        }
-        const target = walkGraph.nodeMap[path[waypointIdx]];
-        if (!target) return;
-        // Prefer snapped position for bearing accuracy
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        const fromLat = snappedPos ? snappedPos.lat : gpsPos.lat;
-        const fromLng = snappedPos ? snappedPos.lng : gpsPos.lng;
-        const br = bearing(fromLat, fromLng, target.lat, target.lng);
-        setDirectionInstruction(getDirectionFromHeading(compassHeading, br));
-    }, [compassHeading, gpsPos, snappedPos, path, waypointIdx, walkGraph]);
-
     // ── AR values ─────────────────────────────────────────────
     const arrowAngle = useCallback(() => {
         if (!gpsPos || path.length === 0) return 0;
@@ -506,7 +455,6 @@ export function NavigationProvider({ children }) {
         // Off-track
         isOffTrack, offTrackDist,
         // Direction
-        directionInstruction,
         // Compass / AR — direct phone heading
 
         compassHeading,

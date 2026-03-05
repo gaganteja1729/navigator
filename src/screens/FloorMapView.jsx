@@ -24,7 +24,7 @@ export default function FloorMapView() {
         nodeMap, navigate, gpsPos, walkGraph, segments,
         goBack, adminDest, adminLocations, destName, destIcon,
         isOffTrack, offTrackDist, distanceToDest, distanceToNextWaypoint,
-        directionInstruction, snappedPos, guideLineTarget, compassHeading,
+        snappedPos, guideLineTarget, compassHeading,
 
 
     } = useNav();
