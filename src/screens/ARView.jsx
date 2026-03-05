@@ -186,10 +186,7 @@ export default function ARView() {
                                     <line x1={60} y1={60} x2={60 + dx} y2={60 + dy}
                                         stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
                                     <circle cx={60 + dx} cy={60 + dy} r="3" fill="#f59e0b" />
-                                    <text x={60 + dx} y={60 + dy - 6} textAnchor="middle"
-                                        fill="#fde68a" fontSize="5" fontWeight="bold">
-                                        {destName?.slice(0, 8)}
-                                    </text>
+                                    
                                 </g>
                             );
                         })()}
