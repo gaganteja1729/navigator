@@ -465,3 +465,8 @@ export function NavigationProvider({ children }) {
 
     return <NavCtx.Provider value={value}>{children}</NavCtx.Provider>;
 }
+export const useNav = () => {
+    const ctx = useContext(NavCtx);
+    if (!ctx) throw new Error("useNav must be used inside NavigationProvider");
+    return ctx;
+};
