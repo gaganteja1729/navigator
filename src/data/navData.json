@@ -195,6 +195,34 @@
         "lng": 82.2324961,
         "label": "Point"
       }
+    },
+    {
+      "id": "seg-1772708011275",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9309334,
+        "lng": 82.2322054,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9309334,
+        "lng": 82.2322054,
+        "label": "Point"
+      }
+    },
+    {
+      "id": "seg-1772708021497",
+      "floor": "ground",
+      "start": {
+        "lat": 16.9309334,
+        "lng": 82.2322054,
+        "label": "Point"
+      },
+      "end": {
+        "lat": 16.9309334,
+        "lng": 82.2322054,
+        "label": "Point"
+      }
     }
   ],
   "locationCoords": {
@@ -225,6 +253,14 @@
     "Auditorium": {
       "lat": 16.9308086,
       "lng": 82.2321107
+    },
+    "CME 1st Year": {
+      "lat": 16.9309334,
+      "lng": 82.2322054
+    },
+    "CME 3rd Year": {
+      "lat": 16.9309816,
+      "lng": 82.2320936
     }
   }
 }
