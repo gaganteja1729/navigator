@@ -33,7 +33,7 @@ export default function HomeScreen() {
             ...loc,
             lat: adminLocations[loc.name].lat,
             lng: adminLocations[loc.name].lng,
-            floor: adminLocations[loc.name].floor ?? 'ground',
+
         }));
 
     const filtered = savedLocations.filter(loc =>
@@ -41,7 +41,7 @@ export default function HomeScreen() {
     );
 
     const handleSelectLocation = (loc) => {
-        selectAdminDestination(loc.name, loc.lat, loc.lng, loc.floor);
+        selectAdminDestination(loc.name, loc.lat, loc.lng);
     };
 
     return (
@@ -119,12 +119,12 @@ export default function HomeScreen() {
                         <div className="hs-dest-info">
                             <span className="hs-dest-name">{loc.name}</span>
                             <span className="hs-dest-type">
-                                <span className="hs-floor-badge" style={{
-                                    background: loc.floor === 'first' ? 'rgba(245,158,11,.2)' : 'rgba(99,102,241,.2)',
-                                    color: loc.floor === 'first' ? '#fbbf24' : '#818cf8',
-                                    fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 6, marginRight: 4,
-                                }}>{loc.floor === 'first' ? '1F' : 'GF'}</span>
-                                Tap to navigate
+                                📍 GPS saved · Tap to navigate
+
+
+
+
+
                             </span>
                         </div>
                         <span className="hs-dest-arrow">›</span>

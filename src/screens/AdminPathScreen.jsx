@@ -188,12 +188,13 @@ export default function AdminPathScreen() {
     const handleSaveLocation = async () => {
         if (!mockLocation) return;
         if (!gpsPos) { setStatus('⚠️ Real GPS not available — move outside and try again.'); return; }
-        const updated = { ...savedLocCoords, [mockLocation.name]: { lat: gpsPos.lat, lng: gpsPos.lng, floor } };
+        const updated = { ...savedLocCoords, [mockLocation.name]: { lat: gpsPos.lat, lng: gpsPos.lng } };
         await saveLocCoords(updated);
         setSavedLocCoords(updated);
+        // Also update the pinned location coords instantly
         setMockLocation(prev => ({ ...prev, lat: gpsPos.lat, lng: gpsPos.lng }));
         setMapCenter({ lat: gpsPos.lat, lng: gpsPos.lng });
-        setStatus(`✅ Saved! ${mockLocation.name} → (${gpsPos.lat.toFixed(6)}, ${gpsPos.lng.toFixed(6)}) [${floor === 'ground' ? 'Ground' : '1st Floor'}]`);
+        setStatus(`✅ Saved! ${mockLocation.name} → (${gpsPos.lat.toFixed(6)}, ${gpsPos.lng.toFixed(6)})`);
     };
 
     // ── Delete saved GPS for selected location ────────────────────
@@ -203,20 +204,21 @@ export default function AdminPathScreen() {
         delete updated[mockLocation.name];
         await saveLocCoords(updated);
         setSavedLocCoords(updated);
+        // Revert pin to placeholder coords
         const base = CAMPUS_LOCATIONS.find(l => l.name === mockLocation.name);
         if (base) { setMockLocation(base); setMapCenter({ lat: base.lat, lng: base.lng }); }
         setStatus(`🗑 Deleted saved GPS for ${mockLocation.name}. Using placeholder coords.`);
     };
 
-    // ── Quick staircase marker ────────────────────────────────────
-    const handleMarkStaircase = async () => {
-        if (!effectiveGps) { setStatus('⚠️ No GPS available.'); return; }
-        const label = floor === 'ground' ? 'Staircase Ground' : 'Staircase First';
-        const updated = { ...savedLocCoords, [label]: { lat: effectiveGps.lat, lng: effectiveGps.lng, floor } };
-        await saveLocCoords(updated);
-        setSavedLocCoords(updated);
-        setStatus(`✅ Marked "${label}" at current position.`);
-    };
+
+
+
+
+
+
+
+
+
 
 
 
@@ -646,10 +648,10 @@ export default function AdminPathScreen() {
                     <button className="ap-btn clear-paths" onClick={handleClearPathsOnly} disabled={segments.length === 0}>
                         🗑 Clear Paths
                     </button>
-                    <button className="ap-btn" style={{ background: 'rgba(245,158,11,.15)', borderColor: 'rgba(245,158,11,.5)', color: '#fbbf24', fontSize: 12 }}
-                        onClick={handleMarkStaircase} disabled={!effectiveGps} title="Save current GPS as staircase for this floor">
-                        🪜 Mark Staircase
-                    </button>
+
+
+
+
                 </div>
             ) : (
                 <>

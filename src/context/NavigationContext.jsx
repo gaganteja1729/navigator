@@ -279,12 +279,12 @@ export function NavigationProvider({ children }) {
     const [guideLineTarget, setGuideLineTarget] = useState(null);  // { lat, lng } nearest track point when far
 
     // Select admin destination → navigate to map
-    const selectAdminDestination = useCallback((name, lat, lng, floor = 'ground') => {
-        setAdminDest({ name, lat, lng, floor });
-        setDestNodeId(null);
+    const selectAdminDestination = useCallback((name, lat, lng) => {
+        setAdminDest({ name, lat, lng });
+        setDestNodeId(null);  // Clear old campus-node destination
         setArrived(false);
         setIsOffTrack(false);
-        setCrossFloorPending(false);
+
         navigate('map');
     }, [navigate]);
 
@@ -308,44 +308,50 @@ export function NavigationProvider({ children }) {
         goBack();
     }, [goBack]);
 
-    // ── Cross-floor state ─────────────────────────────────────
-    const [crossFloorPending, setCrossFloorPending] = useState(false);
-    const [pendingFloor, setPendingFloor] = useState(null);
+    // ── Compute A* path ────────────────────────────────────────
+    // NOTE: gpsPos is intentionally NOT in the dependency array.
+    // We read the latest GPS position via gpsPosRef so the path only
+    // recalculates when the destination or walkable graph changes —
+    // NOT on every GPS tick (which was causing waypointIdx to reset every second).
 
-    // User taps “I’m on the new floor”
-    const confirmFloorChange = useCallback(() => {
-        if (pendingFloor) setCurrentFloor(pendingFloor);
-        setPendingFloor(null);
-        setCrossFloorPending(false);
-    }, [pendingFloor]);
 
-    // ── Compute A* path ──────────────────────────────────────
-    // NOTE: gpsPos intentionally NOT in deps — path recalculates only on dest/graph change.
+
+
+
+
+
+
     useEffect(() => {
         const pos = gpsPosRef.current;
-        if (walkGraph.nodes.length === 0 || !pos) { setPath([]); return; }
+        if (walkGraph.nodes.length === 0 || !pos) {
+            setPath([]); return;
+        }
 
-        let destLat, destLng, destFlr;
+        // Determine destination lat/lng
+        let destLat, destLng;
         if (adminDest) {
-            destLat = adminDest.lat; destLng = adminDest.lng; destFlr = adminDest.floor ?? 'ground';
+            destLat = adminDest.lat;
+            destLng = adminDest.lng;
         } else if (destNodeId) {
-            const n = campusNodeMap[destNodeId];
-            if (!n) { setPath([]); return; }
-            destLat = n.lat; destLng = n.lng; destFlr = 'ground';
-        } else { setPath([]); return; }
+            const destCampusNode = campusNodeMap[destNodeId];
+            if (!destCampusNode) { setPath([]); return; }
+            destLat = destCampusNode.lat;
+            destLng = destCampusNode.lng;
+        } else {
+            setPath([]); return;
+        }
 
-        // Find nearest walkable node on the USER’S current floor
-        const startWN = nearestWalkableNode(pos.lat, pos.lng, currentFloor, walkGraph.nodes);
-        // Find nearest walkable node on the DESTINATION’S floor
-        const destWN = nearestWalkableNode(destLat, destLng, destFlr, walkGraph.nodes);
+        // Find nearest walkable nodes
+        const startWN = nearestWalkableNode(pos.lat, pos.lng, null, walkGraph.nodes);
+        const destWN = nearestWalkableNode(destLat, destLng, null, walkGraph.nodes);
         if (!startWN || !destWN) { setPath([]); return; }
 
         const result = aStarOnGraph(startWN.id, destWN.id, walkGraph.adjacency, walkGraph.nodeMap);
         setPath(result || []);
         setWaypointIdx(0);
         setArrived(false);
-        setCrossFloorPending(false);
-    }, [destNodeId, adminDest, walkGraph, currentFloor]);  // currentFloor added
+    }, [destNodeId, adminDest, walkGraph]);  // ← gpsPos removed on purpose
+
 
 
     // ── Snap to track + advance waypoints + direction ───────────
@@ -381,22 +387,25 @@ export function NavigationProvider({ children }) {
         if (!target) return;
         const d = haversineMetres(effectiveLat, effectiveLng, target.lat, target.lng);
 
-        if (d < 8) {
-            // Check if this waypoint is a cross-floor transition
-            const nextId = path[waypointIdx + 1];
-            const nextNode = nextId ? walkGraph.nodeMap[nextId] : null;
-            const isCrossFloor = nextNode && nextNode.floor !== target.floor;
 
-            if (isCrossFloor && !crossFloorPending) {
-                // Stop at stair node, wait for user to confirm floor change
-                setCrossFloorPending(true);
-                setPendingFloor(nextNode.floor);
-                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                return;  // Don't advance yet
-            }
+        if (d < 8) {
+            // Advanced past this waypoint
+
+
+
+
+
+
+
+
+
+
+
 
             if (navigator.vibrate) navigator.vibrate(150);
             if (waypointIdx < path.length - 1) {
+                const nextNode = walkGraph.nodeMap[path[waypointIdx + 1]];
+                if (nextNode && nextNode.floor !== currentFloor) setCurrentFloor(nextNode.floor);
                 setWaypointIdx(w => w + 1);
             } else {
                 setArrived(true);
@@ -405,35 +414,39 @@ export function NavigationProvider({ children }) {
         }
     }, [gpsPos]);
 
-    // ── Direction instruction (live) ─────────────────────────
+    // ── Direction instruction (live — updates on compass AND GPS changes) ──
+    // This mirrors Google Maps: the "turn left/right" banner refreshes every time
+    // the user rotates their phone, not just when GPS ticks.
     useEffect(() => {
-        if (!gpsPos || path.length === 0) { setDirectionInstruction(''); return; }
-
+        if (!gpsPos || path.length === 0) {
+            setDirectionInstruction('');
+            return;
+        }
         const target = walkGraph.nodeMap[path[waypointIdx]];
         if (!target) return;
+        // Prefer snapped position for bearing accuracy
 
-        // Cross-floor waypoint override
-        if (crossFloorPending) {
-            const nextNode = path[waypointIdx + 1] ? walkGraph.nodeMap[path[waypointIdx + 1]] : null;
-            if (nextNode) {
-                const goingUp = nextNode.floor === 'first';
-                setDirectionInstruction(goingUp ? '🪴 Go upstairs' : '🪴 Go downstairs');
-                return;
-            }
-        }
-        if (target.label?.toLowerCase().includes('stair')) {
-            const nextNode = path[waypointIdx + 1] ? walkGraph.nodeMap[path[waypointIdx + 1]] : null;
-            if (nextNode && nextNode.floor !== target.floor) {
-                setDirectionInstruction(nextNode.floor === 'first' ? '🪴 Head to stairs' : '🪴 Head to stairs (go down)');
-                return;
-            }
-        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         const fromLat = snappedPos ? snappedPos.lat : gpsPos.lat;
         const fromLng = snappedPos ? snappedPos.lng : gpsPos.lng;
         const br = bearing(fromLat, fromLng, target.lat, target.lng);
         setDirectionInstruction(getDirectionFromHeading(compassHeading, br));
-    }, [compassHeading, gpsPos, snappedPos, path, waypointIdx, walkGraph, crossFloorPending]);
+    }, [compassHeading, gpsPos, snappedPos, path, waypointIdx, walkGraph]);
 
     // ── AR values ─────────────────────────────────────────────
     const arrowAngle = useCallback(() => {
@@ -472,25 +485,35 @@ export function NavigationProvider({ children }) {
     const destIcon = adminDest ? '📍' : (destNodeId ? campusNodeMap[destNodeId]?.icon : null);
 
     const value = {
-        currentScreen, screenStack, navigate, goBack,
+        // Navigation
+        currentScreen, screenStack,
+        navigate, goBack,
+        // Floor
         currentFloor, selectFloor, changeFloor,
+        // GPS
         gpsPos, gpsError,
+        // Destinations (legacy campus nodes)
         destNodeId, selectDestination, clearDestination, setArrived,
         nodeMap: campusNodeMap, selectableNodes,
+        // Admin destinations
         adminDest, adminLocations, selectAdminDestination,
+        // Route info
         destName, destIcon,
+        // Path
         path, waypointIdx, arrived,
+        // Snap-to-track
         snappedPos, guideLineTarget,
+        // Off-track
         isOffTrack, offTrackDist,
+        // Direction
         directionInstruction,
-        // Cross-floor
-        crossFloorPending, pendingFloor, confirmFloorChange,
+        // Compass / AR — direct phone heading
+
         compassHeading,
         arrowAngle, distanceToDest, distanceToNextWaypoint,
+        // Walkable graph
         walkGraph, segments, refreshGraph,
     };
 
     return <NavCtx.Provider value={value}>{children}</NavCtx.Provider>;
 }
-
-export const useNav = () => useContext(NavCtx);
