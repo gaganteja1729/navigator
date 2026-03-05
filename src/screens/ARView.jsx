@@ -8,13 +8,61 @@ export default function ARView() {
         path, arrived,
         clearDestination, destName,
         goBack,
+        destIcon,
+        compassHeading,
+        distanceToDest,
+        distanceToNextWaypoint,
+        isOffTrack,
+        offTrackDist,
+        directionInstruction,
+        walkGraph,
+        waypointIdx,
+        gpsPos,
+        snappedPos,
     } = useNav();
 
     const videoRef = useRef(null);
     const [cameraError, setCameraError] = useState(false);
     const [permAsked, setPermAsked] = useState(false);
+    const [showMinimap, setShowMinimap] = useState(false);
 
     const angle = arrowAngle();
+    const distToDest = distanceToDest();
+    const distToNext = distanceToNextWaypoint();
+
+    const routeNodes = path.map(id => walkGraph.nodeMap[id]).filter(Boolean);
+    const activePos = snappedPos || gpsPos;
+
+    const minimapData = (() => {
+        if (routeNodes.length === 0) return null;
+        const pts = [...routeNodes];
+        if (activePos) pts.push(activePos);
+
+        let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+        pts.forEach(p => {
+            if (p.lat < minLat) minLat = p.lat;
+            if (p.lat > maxLat) maxLat = p.lat;
+            if (p.lng < minLng) minLng = p.lng;
+            if (p.lng > maxLng) maxLng = p.lng;
+        });
+
+        const pad = 0.00012;
+        minLat -= pad; maxLat += pad; minLng -= pad; maxLng += pad;
+        const latSpan = Math.max(maxLat - minLat, 0.00001);
+        const lngSpan = Math.max(maxLng - minLng, 0.00001);
+
+        const project = (lat, lng) => ({
+            x: ((lng - minLng) / lngSpan) * 100,
+            y: ((maxLat - lat) / latSpan) * 100,
+        });
+
+        const routePoints = routeNodes.map(n => project(n.lat, n.lng));
+        const currentPoint = activePos ? project(activePos.lat, activePos.lng) : null;
+        const targetNode = routeNodes[Math.min(waypointIdx, routeNodes.length - 1)] || null;
+        const targetPoint = targetNode ? project(targetNode.lat, targetNode.lng) : null;
+
+        return { routePoints, currentPoint, targetPoint };
+    })();
 
     // ── Request iOS compass permission ────────────────────────
     const requestOrientPerm = async () => {
@@ -78,12 +126,30 @@ export default function ARView() {
                 </div>
             )}
 
-            {/* ── Back button ── */}
-            <button className="ar-back-btn" onClick={goBack}>‹ Map</button>
+            {/* ── Top HUD ── */}
+            <div className="ar-hud-top">
+                <button className="ar-back" onClick={goBack}>‹ Map</button>
+                <div className="ar-dest-pill">
+                    {destIcon || '📍'} {destName || 'Destination'}
+                </div>
+                <div className="ar-compass">
+                    <span className="ar-compass-needle" style={{ transform: `rotate(${compassHeading}deg)` }}>🧭</span>
+                </div>
+            </div>
+
+            {/* ── Direction / off-track banner ── */}
+            {!arrived && path.length > 0 && (
+                isOffTrack
+                    ? <div className="ar-offtrack-banner">⚠️ Off track by {offTrackDist}m. Move back toward the route.</div>
+                    : <div className="ar-direction-banner">
+                        <div className="ar-direction-text">{directionInstruction || '⬆️ Go straight'}</div>
+                        <div className="ar-direction-target">towards {destName || 'destination'}</div>
+                    </div>
+            )}
 
             {/* ── Navigation Arrow ── */}
             {path.length > 0 && !arrived && (
-                <div className="ar-arrow-center">
+                <div className="ar-arrow-wrap">
                     <svg
                         width="100" height="140"
                         viewBox="0 0 100 140"
@@ -131,6 +197,65 @@ export default function ARView() {
                     </svg>
                 </div>
             )}
+
+            {/* ── Mini-map ── */}
+            {path.length > 0 && !arrived && (
+                <>
+                    <button
+                        className={`ar-minimap-toggle ${showMinimap ? 'active' : ''}`}
+                        onClick={() => setShowMinimap(v => !v)}
+                        title="Toggle mini map"
+                    >
+                        🗺
+                    </button>
+
+                    {showMinimap && minimapData && (
+                        <div className="ar-minimap">
+                            <svg className="ar-minimap-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                <rect x="0" y="0" width="100" height="100" fill="#0b1020" />
+
+                                <polyline
+                                    points={minimapData.routePoints.map(p => `${p.x},${p.y}`).join(' ')}
+                                    fill="none"
+                                    stroke="#6366f1"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                />
+
+                                {minimapData.targetPoint && (
+                                    <circle cx={minimapData.targetPoint.x} cy={minimapData.targetPoint.y} r="3.8" fill="#f59e0b" />
+                                )}
+
+                                {minimapData.currentPoint && (
+                                    <>
+                                        <circle cx={minimapData.currentPoint.x} cy={minimapData.currentPoint.y} r="3.8" fill="#22d3ee" />
+                                        <circle cx={minimapData.currentPoint.x} cy={minimapData.currentPoint.y} r="8" fill="none" stroke="rgba(34,211,238,.35)" strokeWidth="1" />
+                                    </>
+                                )}
+                            </svg>
+                        </div>
+                    )}
+                </>
+            )}
+
+            {/* ── Bottom HUD ── */}
+            <div className="ar-hud-bottom">
+                <div className="ar-info-row">
+                    <div className="ar-info-box">
+                        <span className="ar-info-label">Distance</span>
+                        <span className="ar-info-val">{distToDest != null ? `${distToDest}m` : '--'}</span>
+                    </div>
+                    <div className="ar-info-box">
+                        <span className="ar-info-label">Next Waypoint</span>
+                        <span className="ar-info-val">{distToNext != null ? `${distToNext}m` : '--'}</span>
+                    </div>
+                    <div className="ar-info-box">
+                        <span className="ar-info-label">Heading</span>
+                        <span className="ar-info-val ar-info-val--small">{Math.round(compassHeading)}°</span>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
