@@ -17,6 +17,8 @@ const CAMPUS_LOCATIONS = [
     { name: 'CME 1st Year', lat: 17.38495, lng: 78.48700 },
     { name: 'CME 3rd Year', lat: 17.38550, lng: 78.48710 },
     { name: 'Playground', lat: 17.38460, lng: 78.48620 },
+    { name: 'Administrative Block', lat: 17.38560, lng: 78.48650 },
+    { name: 'Auditorium', lat: 17.38570, lng: 78.48680 },
 ];
 
 
