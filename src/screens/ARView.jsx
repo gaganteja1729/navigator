@@ -22,7 +22,7 @@ export default function ARView() {
     } = useNav();
 
     const videoRef = useRef(null);
-    const [cameraError, setCameraError] = useState(false);
+    const [cameraError, setCameraError] = useState('');
     const [permAsked, setPermAsked] = useState(false);
     const [showMinimap, setShowMinimap] = useState(false);
     const orientationEvent = globalThis?.DeviceOrientationEvent;
@@ -77,16 +77,45 @@ export default function ARView() {
     useEffect(() => {
         let stream;
         (async () => {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                setCameraError('Camera API is not supported on this browser.');
+                return;
+            }
+
+            const options = [
+                { video: { facingMode: { ideal: 'environment' } }, audio: false },
+                { video: true, audio: false },
+            ];
+
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' }, audio: false,
-                });
+                for (const constraints of options) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        break;
+                    } catch (_) {
+                        // Try next camera option
+                    }
+                }
+
+                if (!stream) {
+                    setCameraError('Unable to access camera. Check browser permissions.');
+                    return;
+                }
+
+                setCameraError('');
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
-                    try { await videoRef.current.play(); } catch (_) { }
+                    try {
+                        await videoRef.current.play();
+                    } catch {
+                        setCameraError('Camera started but could not auto-play video preview.');
+                    }
                 }
-            } catch {
-                setCameraError(true);
+            } catch (err) {
+                const msg = err?.name === 'NotAllowedError'
+                    ? 'Camera permission denied. Please allow camera access.'
+                    : 'Unable to start camera preview.';
+                setCameraError(msg);
             }
         })();
         if (typeof orientationEvent?.requestPermission !== 'function') setPermAsked(true);
@@ -99,7 +128,12 @@ export default function ARView() {
             {/* ── Camera / fallback ── */}
             {!cameraError
                 ? <video ref={videoRef} autoPlay playsInline muted className="ar-video" />
-                : <div className="ar-fallback"><div className="ar-fallback-grid" /></div>
+                : <div className="ar-fallback">
+                    <div className="ar-fallback-grid" />
+                    <div className="ar-offtrack-banner" style={{ top: '16px' }}>
+                        ⚠️ {cameraError}
+                    </div>
+                </div>
             }
 
             {/* ── iOS permission gate ── */}
