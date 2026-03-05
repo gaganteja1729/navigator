@@ -19,12 +19,12 @@ export default function ARView() {
 
 
     } = useNav();
-    const fuck = null
     const videoRef = useRef(null);
     const [cameraError, setCameraError] = useState(null);
     const [cameraReady, setCameraReady] = useState(false);
     const [permAsked, setPermAsked] = useState(false);
     const [showMiniMap, setShowMiniMap] = useState(false);
+    const [simHeading, setSimHeading] = useState(0);
 
     // (debug state removed)
 
@@ -96,35 +96,6 @@ export default function ARView() {
                     </div>
                 </div>
             )}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
             {/* Off-track warning */}
