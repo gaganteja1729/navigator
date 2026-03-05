@@ -279,12 +279,7 @@ export default function FloorMapView() {
                     <span>Off route ({offTrackDist}m) — rerouting…</span>
                 </div>
             )}
-            {directionInstruction && !isOffTrack && path.length > 0 && (
-                <div className="fm-direction-banner">
-                    <span className="fm-direction-text">{directionInstruction}</span>
-                    {currentWpNode?.label && <span className="fm-direction-target">toward {currentWpNode.label}</span>}
-                </div>
-            )}
+
 
             {/* SVG Map */}
             <div className="fm-map-wrap" style={{ position: 'relative' }}>
