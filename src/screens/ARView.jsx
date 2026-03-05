@@ -145,13 +145,6 @@ export default function ARView() {
                         {/* Specular sheen */}
                         <polygon points="22,62 45,12 45,8 18,62" fill="rgba(255,255,255,0.1)" />
                     </svg>
-
-                    {directionInstruction && (
-                        <div className="ar-direction-banner">
-                            <span className="ar-direction-text">{directionInstruction}</span>
-                            {nextNode?.label && <span className="ar-direction-target">→ {nextNode.label}</span>}
-                        </div>
-                    )}
                 </div>
             )}
 
@@ -166,15 +159,6 @@ export default function ARView() {
                 </div>
             </div>
 
-            {/* Direction instruction banner */}
-            {cameraReady && !arrived && directionInstruction && (
-                <div className="ar-direction-banner">
-                    <span className="ar-direction-text">{directionInstruction}</span>
-                    {nextNode?.label && (
-                        <span className="ar-direction-target">toward {nextNode.label}</span>
-                    )}
-                </div>
-            )}
 
             {/* (Old flat AR arrow removed here) */}
             {/* Mini-map toggle */}
