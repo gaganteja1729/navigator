@@ -25,6 +25,7 @@ export default function ARView() {
     const [cameraError, setCameraError] = useState(false);
     const [permAsked, setPermAsked] = useState(false);
     const [showMinimap, setShowMinimap] = useState(false);
+    const orientationEvent = globalThis?.DeviceOrientationEvent;
 
     const angle = arrowAngle();
     const distToDest = distanceToDest();
@@ -66,8 +67,8 @@ export default function ARView() {
 
     // ── Request iOS compass permission ────────────────────────
     const requestOrientPerm = async () => {
-        if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
-            try { await DeviceOrientationEvent.requestPermission(); } catch (_) { }
+        if (typeof orientationEvent?.requestPermission === 'function') {
+            try { await orientationEvent.requestPermission(); } catch (_) { }
         }
         setPermAsked(true);
     };
@@ -82,14 +83,15 @@ export default function ARView() {
                 });
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
+                    try { await videoRef.current.play(); } catch (_) { }
                 }
             } catch {
                 setCameraError(true);
             }
         })();
-        if (typeof DeviceOrientationEvent?.requestPermission !== 'function') setPermAsked(true);
+        if (typeof orientationEvent?.requestPermission !== 'function') setPermAsked(true);
         return () => stream?.getTracks().forEach(t => t.stop());
-    }, []);
+    }, [orientationEvent]);
 
     return (
         <div className="ar-root">
@@ -145,6 +147,14 @@ export default function ARView() {
                         <div className="ar-direction-text">{directionInstruction || '⬆️ Go straight'}</div>
                         <div className="ar-direction-target">towards {destName || 'destination'}</div>
                     </div>
+            )}
+
+            {/* ── No route hint (prevents blank AR state) ── */}
+            {!arrived && path.length === 0 && (
+                <div className="ar-direction-banner">
+                    <div className="ar-direction-text">📍 No active route</div>
+                    <div className="ar-direction-target">Select a destination from map, then open AR.</div>
+                </div>
             )}
 
             {/* ── Navigation Arrow ── */}
